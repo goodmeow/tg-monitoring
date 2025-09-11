@@ -1,0 +1,22 @@
+[Unit]
+Description=Telegram Server Monitor (Node Exporter -> Telegram)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/tg-monitoring
+EnvironmentFile=%h/tg-monitoring/.env
+ExecStart=/usr/bin/env python3 -m monitor.main
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
+
