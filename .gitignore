@@ -61,3 +61,4 @@ google-credentials.json
 /credentials.json
 /secrets.json
 data/
+.venv/

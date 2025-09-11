@@ -11,7 +11,7 @@ What it does:
 Quick start
 - Create `.env` with at least:
   - `bot_token=...`
-  - `chat_id=...` (group/channel id)
+  - `chat_id=...` (group id)
 - Optional tuning (defaults in code):
   - `SAMPLE_INTERVAL_SEC=15`
   - `ALERT_MIN_CONSECUTIVE=3`
@@ -23,15 +23,18 @@ Quick start
   - `INODE_FREE_PCT_WARN=0.10`
   - `STATE_FILE=data/state.json`
 
+Install deps (recommended venv)
+- `python3 -m venv .venv && . .venv/bin/activate`
+- `pip install -r requirements.txt`
+
 Run locally
-- `python3 -m monitor.main`
+- `. .venv/bin/activate && python -m monitor.main`
 
 Systemd
 - Copy `systemd/tg-monitor.service` to `~/.config/systemd/user/` or `/etc/systemd/system/`
 - `systemctl --user daemon-reload && systemctl --user enable --now tg-monitor.service`
 
 Notes
-- Only built-in Python libs are used; no extra dependencies.
+- Uses `aiogram` for bot, `httpx` for HTTP, and `prometheus-client` parser.
 - Node Exporter port is mapped to 9100 per `/home/ubuntu/monitoring/docker-compose.yml`.
 - The bot only sends on state changes; use `/status` anytime for a snapshot.
-

@@ -1,53 +1,51 @@
 from __future__ import annotations
 
-import signal
-import threading
+import asyncio
 import time
 from typing import Dict, List, Tuple
 
-from .config import Config, load_config
+from aiogram import Bot, Dispatcher, Router
+from aiogram.filters import Command
+from aiogram.types import Message
+
+from .config import load_config
 from .evaluator import Thresholds, evaluate
-from .metrics import NodeStats, fetch_metrics_text, parse_node_exporter_metrics
+from .metrics import fetch_node_stats
 from .state import StateStore
-from .telegram_client import TelegramClient
 
 
 def _compose_changes_message(changes: List[Tuple[str, Dict]]) -> str:
-    # changes: list of (change_type, entry), where change_type in {'ALERT','RECOVERED'}
     lines = []
     for change, entry in changes:
-        emoji = "🔴" if change == 'ALERT' else "🟢"
+        emoji = "🔴" if change == "ALERT" else "🟢"
         lines.append(f"{emoji} {change} — {entry['message']}")
     return "\n".join(lines)
 
 
 def _compose_status_message(results: Dict[str, Dict]) -> str:
-    # Present CPU, Mem first, then top 5 disks by usage
     lines: List[str] = []
-    if 'cpu' in results:
-        r = results['cpu']
-        emoji = '🔴' if r['status'] == 'alert' else '🟢'
+    if "cpu" in results:
+        r = results["cpu"]
+        emoji = "🔴" if r["status"] == "alert" else "🟢"
         lines.append(f"{emoji} {r['message']}")
-    if 'mem' in results:
-        r = results['mem']
-        emoji = '🔴' if r['status'] == 'alert' else '🟢'
+    if "mem" in results:
+        r = results["mem"]
+        emoji = "🔴" if r["status"] == "alert" else "🟢"
         lines.append(f"{emoji} {r['message']}")
-    # disks
-    disks = [(k, v) for k, v in results.items() if k.startswith('disk:')]
-    disks.sort(key=lambda kv: kv[1].get('value', 0.0), reverse=True)
-    for k, r in disks[:8]:
-        emoji = '🔴' if r['status'] == 'alert' else '🟢'
+    disks = [(k, v) for k, v in results.items() if k.startswith("disk:")]
+    disks.sort(key=lambda kv: kv[1].get("value", 0.0), reverse=True)
+    for _, r in disks[:8]:
+        emoji = "🔴" if r["status"] == "alert" else "🟢"
         lines.append(f"{emoji} {r['message']}")
-    # inodes if present
-    inodes = [(k, v) for k, v in results.items() if k.startswith('inode:')]
-    inodes.sort(key=lambda kv: kv[1].get('value', 0.0))  # lower free is worse
-    for k, r in inodes[:8]:
-        emoji = '🔴' if r['status'] == 'alert' else '🟢'
+    inodes = [(k, v) for k, v in results.items() if k.startswith("inode:")]
+    inodes.sort(key=lambda kv: kv[1].get("value", 0.0))
+    for _, r in inodes[:8]:
+        emoji = "🔴" if r["status"] == "alert" else "🟢"
         lines.append(f"{emoji} {r['message']}")
     return "\n".join(lines) or "No metrics available"
 
 
-def monitor_loop(cfg: Config, state: StateStore, tg: TelegramClient, stop_event: threading.Event):
+async def monitor_task(cfg, state: StateStore, bot: Bot):
     thresholds = Thresholds(
         cpu_load_per_core_warn=cfg.cpu_load_per_core_warn,
         mem_available_pct_warn=cfg.mem_available_pct_warn,
@@ -56,146 +54,105 @@ def monitor_loop(cfg: Config, state: StateStore, tg: TelegramClient, stop_event:
         inode_free_pct_warn=cfg.inode_free_pct_warn,
         exclude_fs_types=cfg.exclude_fs_types,
     )
-
-    while not stop_event.is_set():
+    while True:
         try:
-            text = fetch_metrics_text(cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec)
-            stats: NodeStats = parse_node_exporter_metrics(text)
+            stats = await fetch_node_stats(cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec)
             results = evaluate(stats, thresholds)
 
-            # Build state transitions
             changes: List[Tuple[str, Dict]] = []
             for key, cur in results.items():
                 prev = state.get_check(key)
-                prev_status = prev.get('status') if prev else 'unknown'
-                consec = prev.get('consecutive', 0)
-                last_value = prev.get('last_value')
+                prev_status = prev.get("status") if prev else "unknown"
+                consec = prev.get("consecutive", 0)
 
-                if cur['status'] == 'alert':
-                    consec = consec + 1 if prev_status == 'alert' else 1
+                if cur["status"] == "alert":
+                    consec = consec + 1 if prev_status == "alert" else 1
                     cur_state = {
-                        'status': 'alert',
-                        'consecutive': consec,
-                        'last_value': cur.get('value'),
-                        'last_ts': time.time(),
-                        'message': cur['message'],
+                        "status": "alert",
+                        "consecutive": consec,
+                        "last_value": cur.get("value"),
+                        "last_ts": time.time(),
+                        "message": cur["message"],
                     }
-                    # Trigger alert only on transition after reaching min consecutive
-                    if prev_status != 'alert' and consec >= cfg.alert_min_consecutive:
-                        changes.append(('ALERT', cur))
+                    if prev_status != "alert" and consec >= cfg.alert_min_consecutive:
+                        changes.append(("ALERT", cur))
                     state.set_check(key, cur_state)
                 else:
-                    # ok
-                    # If was alert before, mark recovered
-                    if prev_status == 'alert':
-                        changes.append(('RECOVERED', cur))
+                    if prev_status == "alert":
+                        changes.append(("RECOVERED", cur))
                     cur_state = {
-                        'status': 'ok',
-                        'consecutive': 1 if prev_status == 'ok' else 0,
-                        'last_value': cur.get('value'),
-                        'last_ts': time.time(),
-                        'message': cur['message'],
+                        "status": "ok",
+                        "consecutive": 1 if prev_status == "ok" else 0,
+                        "last_value": cur.get("value"),
+                        "last_ts": time.time(),
+                        "message": cur["message"],
                     }
                     state.set_check(key, cur_state)
 
-            # Persist state
             state.save()
 
-            # Send notifications if any changes
             if changes:
-                msg = _compose_changes_message(changes)
-                tg.send_message(cfg.chat_id, msg)
-
+                await bot.send_message(cfg.chat_id, _compose_changes_message(changes), disable_web_page_preview=True)
         except Exception:
-            # Avoid crashing the loop; could log in future
+            # optional: send a one-time unreachable warning with debounce
             pass
 
-        stop_event.wait(cfg.sample_interval_sec)
+        await asyncio.sleep(cfg.sample_interval_sec)
 
 
-def updates_loop(cfg: Config, state: StateStore, tg: TelegramClient, stop_event: threading.Event):
-    last_update_id = state.get_last_update_id()
-    while not stop_event.is_set():
+def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
+    for allowed in allowed_list:
+        if isinstance(allowed, int) and chat_id == allowed:
+            return True
+        if isinstance(allowed, str) and str(chat_id) == allowed:
+            return True
+    return False
+
+
+def build_router(cfg, state: StateStore) -> Router:
+    router = Router()
+
+    @router.message(Command("status"))
+    async def cmd_status(message: Message):
+        if not _is_allowed(message.chat.id, cfg.allowed_chat_ids):
+            return
         try:
-            res = tg.get_updates(offset=(last_update_id + 1) if last_update_id is not None else None, timeout=cfg.long_poll_timeout_sec, allowed_updates=["message"])
-            if not res.get('ok'):
-                # brief backoff
-                stop_event.wait(2)
-                continue
-            updates = res.get('result', [])
-            for upd in updates:
-                last_update_id = max(last_update_id or 0, upd.get('update_id', 0))
-                msg = upd.get('message') or {}
-                chat = msg.get('chat') or {}
-                chat_id = chat.get('id')
-                text = (msg.get('text') or '').strip()
-
-                # Allow only configured chat id
-                allowed = False
-                for allowed_id in cfg.allowed_chat_ids:
-                    if isinstance(allowed_id, int) and chat_id == allowed_id:
-                        allowed = True
-                        break
-                    if isinstance(allowed_id, str) and str(chat_id) == allowed_id:
-                        allowed = True
-                        break
-                if not allowed:
-                    continue
-
-                if text.startswith('/status'):
-                    try:
-                        ttext = fetch_metrics_text(cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec)
-                        stats = parse_node_exporter_metrics(ttext)
-                        thresholds = Thresholds(
-                            cpu_load_per_core_warn=cfg.cpu_load_per_core_warn,
-                            mem_available_pct_warn=cfg.mem_available_pct_warn,
-                            disk_usage_pct_warn=cfg.disk_usage_pct_warn,
-                            enable_inodes=cfg.enable_inodes,
-                            inode_free_pct_warn=cfg.inode_free_pct_warn,
-                            exclude_fs_types=cfg.exclude_fs_types,
-                        )
-                        results = evaluate(stats, thresholds)
-                        msg_text = _compose_status_message(results)
-                    except Exception:
-                        msg_text = "Failed to collect status"
-                    tg.send_message(cfg.chat_id, msg_text)
-
-            if last_update_id is not None:
-                state.set_last_update_id(last_update_id)
-                state.save()
-
+            stats = await fetch_node_stats(cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec)
+            thresholds = Thresholds(
+                cpu_load_per_core_warn=cfg.cpu_load_per_core_warn,
+                mem_available_pct_warn=cfg.mem_available_pct_warn,
+                disk_usage_pct_warn=cfg.disk_usage_pct_warn,
+                enable_inodes=cfg.enable_inodes,
+                inode_free_pct_warn=cfg.inode_free_pct_warn,
+                exclude_fs_types=cfg.exclude_fs_types,
+            )
+            results = evaluate(stats, thresholds)
+            await message.answer(_compose_status_message(results), disable_web_page_preview=True)
         except Exception:
-            # swallow and retry
-            stop_event.wait(2)
+            await message.answer("Failed to collect status")
+
+    return router
+
+
+async def amain():
+    cfg = load_config()
+    state = StateStore(cfg.state_file)
+    bot = Bot(cfg.bot_token)
+    dp = Dispatcher()
+    dp.include_router(build_router(cfg, state))
+
+    task = asyncio.create_task(monitor_task(cfg, state, bot))
+    try:
+        await dp.start_polling(bot, allowed_updates=["message"])
+    finally:
+        task.cancel()
+        with contextlib.suppress(Exception):
+            await task
 
 
 def main():
-    cfg = load_config()
-    state = StateStore(cfg.state_file)
-    tg = TelegramClient(cfg.bot_token, timeout_sec=cfg.http_timeout_sec)
-
-    stop_event = threading.Event()
-
-    def handle_sig(signum, frame):
-        stop_event.set()
-
-    signal.signal(signal.SIGINT, handle_sig)
-    signal.signal(signal.SIGTERM, handle_sig)
-
-    t1 = threading.Thread(target=monitor_loop, args=(cfg, state, tg, stop_event), name="monitor", daemon=True)
-    t2 = threading.Thread(target=updates_loop, args=(cfg, state, tg, stop_event), name="updates", daemon=True)
-    t1.start()
-    t2.start()
-
-    try:
-        while not stop_event.is_set():
-            time.sleep(0.5)
-    finally:
-        stop_event.set()
-        t1.join(timeout=2)
-        t2.join(timeout=2)
+    asyncio.run(amain())
 
 
 if __name__ == "__main__":
     main()
-
