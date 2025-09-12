@@ -95,11 +95,27 @@ def _compose_status_message_html(results: Dict[str, Dict], hostname: str, ts: fl
     if "disk" in results:
         r = results["disk"]
         emoji = "🔴" if r["status"] == "alert" else "🟢"
-        lines.append(f"\n<b>Disk</b> {emoji}\n{r['message']}")
+        lines.append(f"\n<b>Disk</b> {emoji}")
+        by = (r.get("meta") or {}).get("by_mount") or []
+        if by:
+            for it in by:
+                lines.append(
+                    f"• {_decorate_with_bar({'type': 'disk', 'value': it.get('value', 0.0), 'mount': it.get('mount', '/')})}"
+                )
+        else:
+            lines.append(r.get("message") or "OK")
     if "inode" in results:
         r = results["inode"]
         emoji = "🔴" if r["status"] == "alert" else "🟢"
-        lines.append(f"\n<b>Inodes</b> {emoji}\n{r['message']}")
+        lines.append(f"\n<b>Inodes</b> {emoji}")
+        by = (r.get("meta") or {}).get("by_mount") or []
+        if by:
+            for it in by:
+                lines.append(
+                    f"• {_decorate_with_bar({'type': 'inode', 'value': it.get('value', 0.0), 'mount': it.get('mount', '/')})}"
+                )
+        else:
+            lines.append(r.get("message") or "OK")
     return "\n".join(lines)
 
 
