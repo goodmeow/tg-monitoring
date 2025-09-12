@@ -11,11 +11,15 @@ import contextlib
 import socket
 from datetime import datetime, timezone
 import psutil
+import time as _time
+import html as _html
+import feedparser
 
 from .config import load_config
 from .evaluator import Thresholds, evaluate
 from .metrics import fetch_node_stats
 from .state import StateStore
+from .rss_store import RssStore
 
 
 def _compose_changes_message_html(changes: List[Tuple[str, Dict]], hostname: str) -> str:
@@ -233,20 +237,199 @@ def build_router(cfg, state: StateStore) -> Router:
     return router
 
 
+# ===== RSS features =====
+
+def build_rss_router(cfg, rss: RssStore) -> Router:
+    router = Router()
+
+    @router.message(Command("rss_add"))
+    async def rss_add(message: Message):
+        if not _is_allowed(message.chat.id, cfg.allowed_chat_ids):
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("Usage: /rss_add <url>")
+            return
+        url = parts[1].strip()
+        rss.add_feed(message.chat.id, url)
+        rss.save()
+        await message.answer(f"Subscribed to feed:\n{_html.escape(url)}")
+
+    @router.message(Command("rss_rm"))
+    async def rss_rm(message: Message):
+        if not _is_allowed(message.chat.id, cfg.allowed_chat_ids):
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("Usage: /rss_rm <url>")
+            return
+        url = parts[1].strip()
+        rss.remove_feed(message.chat.id, url)
+        rss.save()
+        await message.answer(f"Unsubscribed:\n{_html.escape(url)}")
+
+    @router.message(Command("rss_ls"))
+    async def rss_ls(message: Message):
+        if not _is_allowed(message.chat.id, cfg.allowed_chat_ids):
+            return
+        feeds = rss.list_feeds(message.chat.id)
+        counts = rss.get_pending_counts(message.chat.id)
+        last = rss.get_last_digest(message.chat.id)
+        next_ts = last + cfg.rss_digest_interval_sec
+        now = _time.time()
+        rem = max(0, int(next_ts - now))
+        mins = rem // 60
+        lines = ["<b>RSS Subscriptions</b>"]
+        if feeds:
+            for u in feeds:
+                c = counts.get(u, 0)
+                lines.append(f"• {_html.escape(u)} (pending: {c})")
+        else:
+            lines.append("(none)")
+        lines.append(f"\nNext digest in ~{mins} min")
+        await message.answer("\n".join(lines), parse_mode="HTML")
+
+    return router
+
+
+async def rss_poll_task(cfg, rss: RssStore):
+    while True:
+        try:
+            feeds = rss.all_feeds()
+            for url in feeds:
+                meta = rss.get_feed_meta(url)
+                try:
+                    parsed = feedparser.parse(url, etag=meta.get("etag"), modified=meta.get("last_modified"))
+                except Exception:
+                    continue
+                status = getattr(parsed, "status", 200)
+                if status == 304:
+                    continue
+                rss.update_feed_meta(url, getattr(parsed, "etag", None), getattr(parsed, "modified", None))
+
+                entries = getattr(parsed, "entries", []) or []
+                seen = set(meta.get("seen_ids") or [])
+                new_items = []
+                for e in entries:
+                    iid = e.get("id") or e.get("link") or (e.get("title") or "") + str(e.get("published"))
+                    if not iid or iid in seen:
+                        continue
+                    # published timestamp
+                    ts = None
+                    if e.get("published_parsed"):
+                        try:
+                            ts = _time.mktime(e.published_parsed)
+                        except Exception:
+                            ts = None
+                    item = {
+                        "id": iid,
+                        "title": e.get("title") or "(no title)",
+                        "link": e.get("link") or "",
+                        "author": e.get("author") or "",
+                        "published_ts": ts or _time.time(),
+                        "feed_title": getattr(parsed.feed, "title", ""),
+                    }
+                    new_items.append(item)
+                    rss.add_seen_id(url, iid)
+
+                if not new_items:
+                    continue
+
+                subs = rss.subscribers(url)
+                for cid in subs:
+                    for it in new_items:
+                        rss.add_pending_item(cid, url, it)
+                rss.save()
+        except Exception:
+            pass
+        await asyncio.sleep(cfg.rss_poll_interval_sec)
+
+
+def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]], cfg) -> str:
+    # Flatten count and cap per feed and total
+    total = 0
+    lines: List[str] = []
+    ts_local = datetime.now(tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    lines.append(f"<b>RSS Digest — {hostname}</b>\n<i>{ts_local}</i>")
+    for url, items in items_by_feed.items():
+        if not items:
+            continue
+        # sort by published_ts ascending
+        items = sorted(items, key=lambda x: x.get("published_ts", 0))
+        cap = min(len(items), cfg.rss_digest_items_per_feed)
+        shown = 0
+        lines.append(f"\n<b>{_html.escape(url)}</b>")
+        for it in items[:cap]:
+            title = _html.escape(it.get("title") or "(no title)")
+            link = _html.escape(it.get("link") or "")
+            author = _html.escape(it.get("author") or "")
+            t = it.get("published_ts")
+            tstr = datetime.fromtimestamp(t, tz=timezone.utc).astimezone().strftime("%H:%M %Z") if t else ""
+            lines.append(f"• <a href=\"{link}\">{title}</a> — {author} ({tstr})")
+            shown += 1
+            total += 1
+            if total >= cfg.rss_digest_max_total:
+                break
+        more = max(0, len(items) - cap)
+        if more:
+            lines.append(f"(+{more} more)")
+        if total >= cfg.rss_digest_max_total:
+            break
+    if total == 0:
+        return "(no new items)"
+    return "\n".join(lines)
+
+
+async def rss_digest_task(cfg, rss: RssStore, bot: Bot):
+    host = socket.gethostname()
+    while True:
+        try:
+            # iterate over chats
+            chats = list((rss.data.get("chats") or {}).keys())
+            now = _time.time()
+            for cid in chats:
+                last = rss.get_last_digest(cid)
+                if now - last < cfg.rss_digest_interval_sec:
+                    continue
+                pending = rss.pop_pending_digest(cid)
+                if not any(pending.values()):
+                    # nothing to send; update last_digest to avoid spinning
+                    rss.set_last_digest(cid, now)
+                    rss.save()
+                    continue
+                msg = _compose_rss_digest_html(host, pending, cfg)
+                await bot.send_message(cid, msg, parse_mode="HTML", disable_web_page_preview=True)
+                rss.set_last_digest(cid, now)
+                rss.save()
+        except Exception:
+            pass
+        await asyncio.sleep(300)  # check every 5 minutes
+
+
 async def amain():
     cfg = load_config()
     state = StateStore(cfg.state_file)
+    rss = RssStore(cfg.rss_store_file)
     bot = Bot(cfg.bot_token)
     dp = Dispatcher()
     dp.include_router(build_router(cfg, state))
+    dp.include_router(build_rss_router(cfg, rss))
 
     task = asyncio.create_task(monitor_task(cfg, state, bot))
+    rss_poll = asyncio.create_task(rss_poll_task(cfg, rss))
+    rss_digest = asyncio.create_task(rss_digest_task(cfg, rss, bot))
     try:
         await dp.start_polling(bot, allowed_updates=["message"])
     finally:
         task.cancel()
+        rss_poll.cancel()
+        rss_digest.cancel()
         with contextlib.suppress(Exception):
             await task
+        with contextlib.suppress(Exception):
+            await rss_poll
+        with contextlib.suppress(Exception):
+            await rss_digest
 
 
 def main():

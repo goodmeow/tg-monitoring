@@ -86,6 +86,13 @@ class Config:
     long_poll_timeout_sec: int = 50
     control_chat_id: Optional[str] = None  # if None, fallback to chat_id
 
+    # RSS settings
+    rss_store_file: str = "data/rss.json"
+    rss_poll_interval_sec: int = 300  # 5 minutes
+    rss_digest_interval_sec: int = 3600  # 1 hour
+    rss_digest_items_per_feed: int = 5
+    rss_digest_max_total: int = 40
+
     @property
     def allowed_chat_ids(self) -> List[int | str]:
         ids: List[int | str] = []
@@ -146,6 +153,13 @@ def load_config() -> Config:
     long_poll_timeout_sec = _get_int(env, "LONG_POLL_TIMEOUT_SEC", 50)
     control_chat_id = _get(env, "CONTROL_CHAT_ID", None)
 
+    # RSS
+    rss_store_file = _get(env, "RSS_STORE_FILE", "data/rss.json")
+    rss_poll_interval_sec = _get_int(env, "RSS_POLL_INTERVAL_SEC", 300)
+    rss_digest_interval_sec = _get_int(env, "RSS_DIGEST_INTERVAL_SEC", 3600)
+    rss_digest_items_per_feed = _get_int(env, "RSS_DIGEST_ITEMS_PER_FEED", 5)
+    rss_digest_max_total = _get_int(env, "RSS_DIGEST_MAX_TOTAL", 40)
+
     return Config(
         bot_token=bot_token,
         chat_id=chat_id,
@@ -162,5 +176,9 @@ def load_config() -> Config:
         http_timeout_sec=http_timeout_sec,
         long_poll_timeout_sec=long_poll_timeout_sec,
         control_chat_id=control_chat_id,
+        rss_store_file=rss_store_file,
+        rss_poll_interval_sec=rss_poll_interval_sec,
+        rss_digest_interval_sec=rss_digest_interval_sec,
+        rss_digest_items_per_feed=rss_digest_items_per_feed,
+        rss_digest_max_total=rss_digest_max_total,
     )
-
