@@ -16,7 +16,7 @@ from monitor.config import Config
 from monitor.evaluator import Thresholds, evaluate
 import logging
 from tgbot.clients.node_exporter import NodeExporterClient
-from monitor.state import StateStore
+from tgbot.stores.state_store import StateStore
 
 
 def _human_gib(n: float) -> str:

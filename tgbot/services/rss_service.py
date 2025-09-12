@@ -17,7 +17,7 @@ from aiogram.types import Message
 
 from monitor.config import Config
 from tgbot.clients.feed_client import FeedClient
-from monitor.rss_store import RssStore
+from tgbot.stores.rss_store import RssStore
 
 
 def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
