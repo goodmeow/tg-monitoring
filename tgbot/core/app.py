@@ -80,11 +80,12 @@ class App:
         for t in self._tasks:
             t.cancel()
         for t in self._tasks:
-            with asyncio.CancelledError:  # type: ignore
-                try:
-                    await t
-                except Exception:
-                    pass
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
         self._tasks.clear()
 
         # Shutdown hooks
@@ -101,4 +102,3 @@ class App:
             await self.dp.start_polling(self.bot, allowed_updates=["message"])  # keep simple
         finally:
             await self._stop_modules()
-
