@@ -71,7 +71,7 @@ class App:
 
     async def _start_modules(self):
         # Load modules from env
-        raw = os.environ.get("MODULES", "monitoring,rss,help")
+        raw = os.environ.get("MODULES", "monitoring,rss,help,stickers")
         names = [n.strip() for n in raw.split(",") if n.strip()]
         for n in names:
             m = self._load_module(n)
