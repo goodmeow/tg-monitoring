@@ -8,8 +8,10 @@ Type=simple
 WorkingDirectory=%h/tg-monitoring
 EnvironmentFile=%h/tg-monitoring/.env
 # If using a venv at %h/tg-monitoring/.venv, uncomment below and comment the next line:
-# ExecStart=%h/tg-monitoring/.venv/bin/python -m monitor.main
-ExecStart=/usr/bin/env python3 -m monitor.main
+# Legacy:
+# ExecStart=/usr/bin/env python3 -m monitor.main
+# New modular entrypoint:
+ExecStart=/usr/bin/env python3 -m tgbot.main
 Restart=always
 RestartSec=5s
 NoNewPrivileges=true

@@ -12,7 +12,7 @@ venv:
 install: venv
 
 run:
-	. $(VENV)/bin/activate && $(PY) -m monitor.main
+	. $(VENV)/bin/activate && $(PY) -m tgbot.main
 
 status:
 	systemctl --user status tg-monitor.service
@@ -31,4 +31,3 @@ enable:
 	install -m 0644 systemd/tg-monitor.service ~/.config/systemd/user/tg-monitor.service
 	systemctl --user daemon-reload
 	systemctl --user enable --now tg-monitor.service
-

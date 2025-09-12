@@ -11,11 +11,10 @@ OOP + Modular Migration Checklist
   - [x] Add `MODULES` env (document in `.env.example`)
   - [x] Update README with modular draft usage
 - Next steps (implementation)
-  - [ ] Extract `MonitoringService` class (move logic from `monitor/main.py`)
-  - [ ] Extract `RssService` class (move logic from `monitor/main.py`)
+- [x] Extract `MonitoringService` class (move logic from `monitor/main.py`)
+- [x] Extract `RssService` class (move logic from `monitor/main.py`)
   - [ ] Add `clients/` abstraction (`NodeExporterClient`, `FeedClient`)
   - [ ] Move stores to `tgbot/stores/` (re-export for backward-compat if needed)
-  - [ ] Switch entrypoint/systemd to `tgbot.main` (behind a flag or after stabilization)
+- [x] Switch entrypoint/systemd to `tgbot.main` (update Makefile and systemd unit)
   - [ ] Add unit tests for services (mock clients)
   - [ ] Document module authoring guide (how to add new features)
-

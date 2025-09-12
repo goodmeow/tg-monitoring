@@ -27,8 +27,10 @@ Install deps (recommended venv)
 - `python3 -m venv .venv && . .venv/bin/activate`
 - `pip install -r requirements.txt`
 
-Run locally
-- `. .venv/bin/activate && python -m monitor.main`
+Run locally (modular)
+- `. .venv/bin/activate && python -m tgbot.main`
+Legacy entrypoint (kept for compatibility):
+- `python -m monitor.main` → sekarang mengalihkan ke `tgbot.main`
 
 Modular architecture (draft)
 - New OOP+Modular skeleton lives under `tgbot/`.
