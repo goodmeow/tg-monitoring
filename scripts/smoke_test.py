@@ -4,7 +4,7 @@ import asyncio
 os.environ.setdefault('ENV_FILE', '.env.example')
 os.environ.setdefault('MODULES', 'monitoring,rss')
 
-from monitor.config import load_config
+from tgbot.domain.config import load_config
 from tgbot.core.app import App
 
 
@@ -19,4 +19,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-

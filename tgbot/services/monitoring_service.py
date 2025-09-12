@@ -12,8 +12,8 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from monitor.config import Config
-from monitor.evaluator import Thresholds, evaluate
+from tgbot.domain.config import Config
+from tgbot.domain.evaluator import Thresholds, evaluate
 import logging
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.state_store import StateStore

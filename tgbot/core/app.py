@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Coroutine
 
 from aiogram import Bot, Dispatcher
 
-from monitor.config import Config
+from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
 from tgbot.stores.state_store import StateStore
 from tgbot.stores.rss_store import RssStore

@@ -15,7 +15,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from monitor.config import Config
+from tgbot.domain.config import Config
 from tgbot.clients.feed_client import FeedClient
 from tgbot.stores.rss_store import RssStore
 

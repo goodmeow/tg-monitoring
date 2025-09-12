@@ -182,3 +182,4 @@ def load_config() -> Config:
         rss_digest_items_per_feed=rss_digest_items_per_feed,
         rss_digest_max_total=rss_digest_max_total,
     )
+

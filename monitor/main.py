@@ -8,7 +8,7 @@ Prefer running: python -m tgbot.main
 """
 
 import asyncio
-from .config import load_config
+from tgbot.domain.config import load_config
 from tgbot.core.app import App
 
 
@@ -19,4 +19,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

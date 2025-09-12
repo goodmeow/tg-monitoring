@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from monitor.config import load_config
+from tgbot.domain.config import load_config
 from tgbot.core.app import App
 
 
@@ -13,4 +13,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
