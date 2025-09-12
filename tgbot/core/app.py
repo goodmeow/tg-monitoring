@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 
 from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
@@ -70,7 +71,7 @@ class App:
 
     async def _start_modules(self):
         # Load modules from env
-        raw = os.environ.get("MODULES", "monitoring,rss")
+        raw = os.environ.get("MODULES", "monitoring,rss,help")
         names = [n.strip() for n in raw.split(",") if n.strip()]
         for n in names:
             m = self._load_module(n)
@@ -85,6 +86,19 @@ class App:
             for c in (m.tasks(self.ctx) or []):
                 self._tasks.append(asyncio.create_task(c))
         self.log.info("Modules started: %s", ", ".join(getattr(m, 'name', 'module') for m in self.modules))
+
+        # Set bot commands (menu) for convenience
+        try:
+            cmds = [
+                BotCommand(command="help", description="Bantuan & tombol cepat"),
+                BotCommand(command="status", description="Ringkasan status server"),
+                BotCommand(command="rss_add", description="Tambah langganan RSS"),
+                BotCommand(command="rss_rm", description="Hapus langganan RSS"),
+                BotCommand(command="rss_ls", description="Daftar langganan RSS"),
+            ]
+            await self.bot.set_my_commands(cmds)
+        except Exception:
+            self.log.warning("set_my_commands failed", exc_info=True)
 
     async def _stop_modules(self):
         # Cancel background tasks
@@ -111,6 +125,9 @@ class App:
     async def run(self):
         await self._start_modules()
         try:
-            await self.dp.start_polling(self.bot, allowed_updates=["message"])  # keep simple
+            await self.dp.start_polling(
+                self.bot,
+                allowed_updates=["message", "callback_query"],
+            )
         finally:
             await self._stop_modules()

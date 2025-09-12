@@ -7,6 +7,7 @@ What it does:
 - Evaluates CPU, memory, and disk thresholds
 - Sends Telegram alerts on state changes (ALERT/RECOVERED)
 - Responds to `/status` in your ops group with a current summary
+ - Provides `/help` with inline buttons for quick actions (Status, RSS List)
 
 Quick start
 - Create `.env` with at least:
@@ -37,7 +38,8 @@ Modular architecture (draft)
 - You can try the new entrypoint:
   - `. .venv/bin/activate && python -m tgbot.main`
 - Enable/disable features via `MODULES` env (comma-separated). Shorthand names resolve to `tgbot.modules.<name>`.
-- Example: `MODULES=monitoring,rss`.
+- Default modules: `monitoring,rss,help`.
+- Example: `MODULES=monitoring,rss,help`.
 
 
 Systemd
@@ -48,3 +50,4 @@ Notes
 - Uses `aiogram` for bot, `httpx` for HTTP, and `prometheus-client` parser.
 - Node Exporter port is mapped to 9100 per `/home/ubuntu/monitoring/docker-compose.yml`.
 - The bot only sends on state changes; use `/status` anytime for a snapshot.
+ - Use `/help` to see available commands and quick inline menu.
