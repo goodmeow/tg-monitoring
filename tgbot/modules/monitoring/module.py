@@ -11,7 +11,11 @@ class Module(BaseModule):
     name = "monitoring"
 
     def routers(self) -> List[Router]:
-        self.service = MonitoringService(self.ctx.cfg, self.ctx.stores["state"])  # type: ignore[attr-defined]
+        self.service = MonitoringService(
+            self.ctx.cfg,
+            self.ctx.stores["state"],
+            self.ctx.clients["node_exporter"],
+        )  # type: ignore[attr-defined]
         return [self.service.build_router()]
 
     def tasks(self, ctx: Any) -> List[Coroutine[Any, Any, None]]:

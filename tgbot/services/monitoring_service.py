@@ -14,7 +14,8 @@ from aiogram.types import Message
 
 from monitor.config import Config
 from monitor.evaluator import Thresholds, evaluate
-from monitor.metrics import fetch_node_stats
+import logging
+from tgbot.clients.node_exporter import NodeExporterClient
 from monitor.state import StateStore
 
 
@@ -134,6 +135,8 @@ def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
 class MonitoringService:
     cfg: Config
     state: StateStore
+    client: NodeExporterClient
+    log: logging.Logger = logging.getLogger("tgbot.monitoring")
 
     def build_router(self) -> Router:
         router = Router()
@@ -143,9 +146,7 @@ class MonitoringService:
             if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
                 return
             try:
-                stats = await fetch_node_stats(
-                    self.cfg.node_exporter_url, timeout_sec=self.cfg.http_timeout_sec
-                )
+                stats = await self.client.fetch_stats()
                 thresholds = Thresholds(
                     cpu_load_per_core_warn=self.cfg.cpu_load_per_core_warn,
                     mem_available_pct_warn=self.cfg.mem_available_pct_warn,
@@ -163,6 +164,7 @@ class MonitoringService:
                     parse_mode="HTML",
                 )
             except Exception:
+                self.log.exception("/status failed")
                 await message.answer("Failed to collect status")
 
         return router
@@ -181,9 +183,7 @@ class MonitoringService:
         host = socket.gethostname()
         while True:
             try:
-                stats = await fetch_node_stats(
-                    cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec
-                )
+                stats = await self.client.fetch_stats()
                 results = evaluate(stats, thresholds)
 
                 changes: List[Tuple[str, Dict]] = []
@@ -226,8 +226,6 @@ class MonitoringService:
                         parse_mode="HTML",
                     )
             except Exception:
-                # optional: debounce warnings
-                pass
+                self.log.warning("monitor loop iteration failed", exc_info=True)
 
             await asyncio.sleep(cfg.sample_interval_sec)
-

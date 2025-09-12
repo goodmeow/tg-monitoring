@@ -9,8 +9,11 @@ from typing import Any, Dict, List, Coroutine
 from aiogram import Bot, Dispatcher
 
 from monitor.config import Config
-from monitor.state import StateStore
-from monitor.rss_store import RssStore
+from tgbot.core.logging import setup_logging
+from tgbot.stores.state_store import StateStore
+from tgbot.stores.rss_store import RssStore
+from tgbot.clients.node_exporter import NodeExporterClient
+from tgbot.clients.feed_client import FeedClient
 
 
 @dataclass
@@ -25,6 +28,7 @@ class AppContext:
 class App:
     def __init__(self, cfg: Config):
         self.cfg = cfg
+        self.log = setup_logging()
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
         self.ctx = AppContext(
@@ -38,6 +42,12 @@ class App:
         # Default stores (reuse existing implementations)
         self.ctx.stores["state"] = StateStore(cfg.state_file)
         self.ctx.stores["rss"] = RssStore(cfg.rss_store_file)
+
+        # Default clients
+        self.ctx.clients["node_exporter"] = NodeExporterClient(
+            url=cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec
+        )
+        self.ctx.clients["feed"] = FeedClient()
 
         self.modules = []  # type: List[Any]
         self._tasks: List[asyncio.Task] = []
@@ -74,6 +84,7 @@ class App:
                 self.dp.include_router(r)
             for c in (m.tasks(self.ctx) or []):
                 self._tasks.append(asyncio.create_task(c))
+        self.log.info("Modules started: %s", ", ".join(getattr(m, 'name', 'module') for m in self.modules))
 
     async def _stop_modules(self):
         # Cancel background tasks
@@ -95,6 +106,7 @@ class App:
                     await m.on_shutdown(self.ctx)
                 except Exception:
                     pass
+        self.log.info("Modules stopped")
 
     async def run(self):
         await self._start_modules()

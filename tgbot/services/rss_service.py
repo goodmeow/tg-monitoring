@@ -9,11 +9,14 @@ from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 import feedparser
+import logging
+import socket
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
 from monitor.config import Config
+from tgbot.clients.feed_client import FeedClient
 from monitor.rss_store import RssStore
 
 
@@ -75,6 +78,8 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
 class RssService:
     cfg: Config
     rss: RssStore
+    client: FeedClient
+    log: logging.Logger = logging.getLogger("tgbot.rss")
 
     def build_router(self) -> Router:
         router = Router()
@@ -140,12 +145,13 @@ class RssService:
                 for url in feeds:
                     meta = rss.get_feed_meta(url)
                     try:
-                        parsed = feedparser.parse(
+                        parsed = self.client.parse(
                             url,
                             etag=meta.get("etag"),
-                            modified=meta.get("last_modified"),
+                            last_modified=meta.get("last_modified"),
                         )
                     except Exception:
+                        self.log.warning("feed parse failed: %s", url, exc_info=True)
                         continue
                     try:
                         etag = getattr(parsed, "etag", None)
@@ -191,7 +197,7 @@ class RssService:
                         rss.add_seen_id(url, iid)
                 rss.save()
             except Exception:
-                pass
+                self.log.warning("rss poll iteration failed", exc_info=True)
             await asyncio.sleep(cfg.rss_poll_interval_sec)
 
     async def digest_loop(self, bot):
@@ -218,6 +224,5 @@ class RssService:
                     rss.set_last_digest(cid, now)
                     rss.save()
             except Exception:
-                pass
+                self.log.warning("rss digest iteration failed", exc_info=True)
             await asyncio.sleep(300)
-

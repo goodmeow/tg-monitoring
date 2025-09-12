@@ -11,7 +11,11 @@ class Module(BaseModule):
     name = "rss"
 
     def routers(self) -> List[Router]:
-        self.service = RssService(self.ctx.cfg, self.ctx.stores["rss"])  # type: ignore[attr-defined]
+        self.service = RssService(
+            self.ctx.cfg,
+            self.ctx.stores["rss"],
+            self.ctx.clients["feed"],
+        )  # type: ignore[attr-defined]
         return [self.service.build_router()]
 
     def tasks(self, ctx: Any) -> List[Coroutine[Any, Any, None]]:
