@@ -4,22 +4,18 @@ from typing import Any, List, Coroutine
 from aiogram import Router
 
 from tgbot.modules.base import Module as BaseModule
-
-# Reuse existing RSS logic while we migrate
-from monitor.main import build_rss_router, rss_poll_task, rss_digest_task
+from tgbot.services.rss_service import RssService
 
 
 class Module(BaseModule):
     name = "rss"
 
     def routers(self) -> List[Router]:
-        rss = self.ctx.stores["rss"]
-        return [build_rss_router(self.ctx.cfg, rss)]
+        self.service = RssService(self.ctx.cfg, self.ctx.stores["rss"])  # type: ignore[attr-defined]
+        return [self.service.build_router()]
 
     def tasks(self, ctx: Any) -> List[Coroutine[Any, Any, None]]:
-        rss = self.ctx.stores["rss"]
         return [
-            rss_poll_task(self.ctx.cfg, rss),
-            rss_digest_task(self.ctx.cfg, rss, self.ctx.bot),
+            self.service.poll_loop(),
+            self.service.digest_loop(self.ctx.bot),
         ]
-
