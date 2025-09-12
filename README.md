@@ -30,6 +30,14 @@ Install deps (recommended venv)
 Run locally
 - `. .venv/bin/activate && python -m monitor.main`
 
+Modular architecture (draft)
+- New OOP+Modular skeleton lives under `tgbot/`.
+- You can try the new entrypoint:
+  - `. .venv/bin/activate && python -m tgbot.main`
+- Enable/disable features via `MODULES` env (comma-separated). Shorthand names resolve to `tgbot.modules.<name>`.
+- Example: `MODULES=monitoring,rss`.
+
+
 Systemd
 - Copy `systemd/tg-monitor.service` to `~/.config/systemd/user/` or `/etc/systemd/system/`
 - `systemctl --user daemon-reload && systemctl --user enable --now tg-monitor.service`
