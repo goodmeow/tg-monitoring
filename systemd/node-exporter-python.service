@@ -1,0 +1,15 @@
+[Unit]
+Description=Python Node Exporter
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tg-monitoring
+Environment="PATH=/home/ubuntu/tg-monitoring/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ubuntu/tg-monitoring/.venv/bin/python /home/ubuntu/tg-monitoring/node_exporter_replacement.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
