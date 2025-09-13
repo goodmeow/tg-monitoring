@@ -7,9 +7,9 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/tg-monitoring
 EnvironmentFile=%h/tg-monitoring/.env
-If using a venv at %h/tg-monitoring/.venv, uncomment below and comment the next line:
-ExecStart=%h/tg-monitoring/.venv/bin/python -m monitor.main
-# ExecStart=/usr/bin/env python3 -m monitor.main
+# Default: use new modular entrypoint (tgbot.main)
+ExecStart=%h/tg-monitoring/.venv/bin/python -m tgbot.main
+# Legacy fallback: ExecStart=%h/tg-monitoring/.venv/bin/python -m monitor.main
 Restart=always
 RestartSec=5s
 NoNewPrivileges=true
