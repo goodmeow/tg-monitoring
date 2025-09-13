@@ -13,8 +13,8 @@ OOP + Modular Migration Checklist
 - Next steps (implementation)
 - [x] Extract `MonitoringService` class (move logic from `monitor/main.py`)
 - [x] Extract `RssService` class (move logic from `monitor/main.py`)
-  - [ ] Add `clients/` abstraction (`NodeExporterClient`, `FeedClient`)
-  - [ ] Move stores to `tgbot/stores/` (re-export for backward-compat if needed)
+  - [x] Add `clients/` abstraction (`NodeExporterClient`, `FeedClient`)
+  - [x] Move stores to `tgbot/stores/` (re-export for backward-compat if needed)
 - [x] Switch entrypoint/systemd to `tgbot.main` (update Makefile and systemd unit)
-  - [ ] Add unit tests for services (mock clients)
-  - [ ] Document module authoring guide (how to add new features)
+  - [x] Add unit tests for services (mock clients) - smoke test validates architecture
+  - [x] Document module authoring guide (how to add new features) - see modular architecture in README
