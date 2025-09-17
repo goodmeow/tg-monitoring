@@ -156,8 +156,10 @@ def _top_mem_processes(n: int = 3):
     return procs[:n]
 
 
-def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
-    for allowed in allowed_list:
+def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
+    if cfg.allow_any_chat:
+        return True
+    for allowed in cfg.allowed_chat_ids:
         if isinstance(allowed, int) and chat_id == allowed:
             return True
         if isinstance(allowed, str) and str(chat_id) == allowed:
@@ -177,7 +179,7 @@ class MonitoringService:
 
         @router.message(Command("status"))
         async def cmd_status(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(message.chat.id, self.cfg):
                 return
             try:
                 stats = await self.client.fetch_stats()
@@ -253,12 +255,16 @@ class MonitoringService:
                 state.save()
 
                 if changes:
-                    await bot.send_message(
-                        cfg.chat_id,
-                        _compose_changes_message_html(changes, host),
-                        disable_web_page_preview=True,
-                        parse_mode="HTML",
-                    )
+                    target_chat = cfg.chat_id or cfg.control_chat_id
+                    if not target_chat:
+                        self.log.warning("No alert chat configured; skipping notification")
+                    else:
+                        await bot.send_message(
+                            target_chat,
+                            _compose_changes_message_html(changes, host),
+                            disable_web_page_preview=True,
+                            parse_mode="HTML",
+                        )
             except Exception:
                 self.log.warning("monitor loop iteration failed", exc_info=True)
 

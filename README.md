@@ -31,6 +31,8 @@ Optional tuning (defaults in code):
 - `INODE_FREE_PCT_WARN=0.10`
 - `STATE_FILE=data/state.json`
 - `LOCK_FILE=data/tg-monitor.pid` (pidfile untuk mencegah instance ganda)
+- `ALLOW_ANY_CHAT=false` (true = bot menerima perintah dari semua chat tanpa restart)
+- `ALLOWED_CHATS=` (daftar tambahan, pisahkan koma, mis. `-10012345,@mychannel`)
 
 ### 2. Install Dependencies
 
@@ -173,6 +175,7 @@ tgbot/
 - State persistence in `data/state.json`
 - Legacy entrypoint `python -m monitor.main` redirects to `tgbot.main`
 - Singleton guard via `LOCK_FILE` ensures hanya satu instance bot berjalan
+- `ALLOW_ANY_CHAT=true` membuat bot otomatis melayani grup baru tanpa restart
 
 ## Requirements
 

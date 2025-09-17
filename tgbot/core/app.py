@@ -122,18 +122,13 @@ class App:
                 BotCommand(command="version", description="Info versi bot"),
             ]
             scopes = [None]
-            try:
-                chat_id = int(self.cfg.chat_id)
-            except Exception:
-                chat_id = self.cfg.chat_id
-            scopes.append(BotCommandScopeChat(chat_id=chat_id))
-            ctrl = self.cfg.control_chat_id
-            if ctrl and ctrl != self.cfg.chat_id:
-                try:
-                    ctrl_id = int(ctrl)
-                except Exception:
-                    ctrl_id = ctrl
-                scopes.append(BotCommandScopeChat(chat_id=ctrl_id))
+            if not self.cfg.allow_any_chat:
+                seen: set[Any] = set()
+                for target in self.cfg.allowed_chat_ids:
+                    if target in seen or target is None:
+                        continue
+                    seen.add(target)
+                    scopes.append(BotCommandScopeChat(chat_id=target))
 
             for scope in scopes:
                 try:

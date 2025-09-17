@@ -105,6 +105,8 @@ class Config:
     control_chat_id: Optional[str] = None  # if None, fallback to chat_id
 
     lock_file: str = "data/tg-monitor.pid"
+    allow_any_chat: bool = False
+    extra_allowed_chats: List[str] = None  # allowlist additions
 
     # RSS settings
     rss_store_file: str = "data/rss.json"
@@ -123,6 +125,11 @@ class Config:
                 ids.append(int(c))
             except Exception:
                 ids.append(c)
+        for extra in self.extra_allowed_chats or []:
+            try:
+                ids.append(int(extra))
+            except Exception:
+                ids.append(extra)
         return list(dict.fromkeys(ids))  # dedupe
 
 
@@ -131,9 +138,10 @@ def load_config() -> Config:
     env = _load_dotenv(envfile)
 
     bot_token = _get(env, "bot_token")
+    if not bot_token:
+        raise RuntimeError("bot_token must be set in .env or environment")
+
     chat_id = _get(env, "chat_id")
-    if not bot_token or not chat_id:
-        raise RuntimeError("bot_token and chat_id must be set in .env or environment")
 
     node_exporter_url = _get(env, "NODE_EXPORTER_URL", "http://127.0.0.1:9100/metrics")
     sample_interval_sec = _get_int(env, "SAMPLE_INTERVAL_SEC", 15)
@@ -173,6 +181,8 @@ def load_config() -> Config:
     long_poll_timeout_sec = _get_int(env, "LONG_POLL_TIMEOUT_SEC", 50)
     control_chat_id = _get(env, "CONTROL_CHAT_ID", None)
     lock_file = _get(env, "LOCK_FILE", "data/tg-monitor.pid")
+    allow_any_chat = _get_bool(env, "ALLOW_ANY_CHAT", False)
+    extra_allowed_chats = _get_list(env, "ALLOWED_CHATS", [])
 
     # RSS
     rss_store_file = _get(env, "RSS_STORE_FILE", "data/rss.json")
@@ -198,6 +208,8 @@ def load_config() -> Config:
         long_poll_timeout_sec=long_poll_timeout_sec,
         control_chat_id=control_chat_id,
         lock_file=lock_file,
+        allow_any_chat=allow_any_chat,
+        extra_allowed_chats=extra_allowed_chats,
         rss_store_file=rss_store_file,
         rss_poll_interval_sec=rss_poll_interval_sec,
         rss_digest_interval_sec=rss_digest_interval_sec,
