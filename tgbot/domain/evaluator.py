@@ -68,14 +68,17 @@ def evaluate(stats: NodeStats, t: Thresholds) -> Dict[str, Dict]:
 
     # Memory
     mem_avail = stats.mem_available_pct
+    # Present memory usage (like htop) so lower values mean more free RAM for operators.
+    mem_used = 0.0 if mem_avail is None else max(0.0, min(1.0, 1.0 - float(mem_avail)))
+    warn_used = max(0.0, min(1.0, 1.0 - float(t.mem_available_pct_warn)))
     out["mem"] = {
         "type": "mem",
-        "status": "alert" if mem_avail <= t.mem_available_pct_warn else "ok",
-        "value": mem_avail,
-        "message": f"Mem available: {_fmt_pct(mem_avail)} (warn <= {_fmt_pct(t.mem_available_pct_warn)})",
+        "status": "alert" if mem_used >= warn_used else "ok",
+        "value": mem_used,
+        "message": f"Mem used: {_fmt_pct(mem_used)} (warn >= {_fmt_pct(warn_used)})",
         "meta": {
-            "available_bytes": None,
-            "total_bytes": None,
+            "used_pct": mem_used,
+            "available_pct": mem_avail,
         },
     }
 

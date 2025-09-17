@@ -25,7 +25,7 @@ Optional tuning (defaults in code):
 - `NODE_EXPORTER_URL=http://127.0.0.1:9100/metrics`
 - `NODE_EXPORTER_TYPE=auto` (auto/docker/python) **NEW**
 - `CPU_LOAD_PER_CORE_WARN=0.9`
-- `MEM_AVAILABLE_PCT_WARN=0.10`
+- `MEM_AVAILABLE_PCT_WARN=0.10` (warn when free RAM ≤ 10%; dashboard shows used%)
 - `DISK_USAGE_PCT_WARN=0.85`
 - `ENABLE_INODES=false`
 - `INODE_FREE_PCT_WARN=0.10`
@@ -87,7 +87,7 @@ The bot uses a modular architecture under `tgbot/`:
 
 ### Available Modules
 
-Default modules: `monitoring,rss,help`
+Default modules: `monitoring,rss,help,stickers,qrcode`
 
 Enable/disable via `MODULES` env variable (comma-separated):
 ```bash
@@ -128,6 +128,7 @@ systemctl --user enable --now tg-monitor.service
 - `/status` - Get current system metrics
 - `/help` - Show available commands with inline menu
 - `/rss` - RSS feed management (if enabled)
+- `/qrcode <text>` - Generate a QR code for text or replied message
 
 ## Technical Stack
 
@@ -155,7 +156,8 @@ tgbot/
 │   ├── exporters/  # Metrics collection
 │   ├── monitoring/ # Alert monitoring
 │   ├── rss/        # RSS feeds
-│   └── help/       # Help commands
+│   ├── help/       # Help commands
+│   └── qrcode/     # QR code generator
 ├── services/       # Business logic
 ├── stores/         # Data persistence
 └── clients/        # External clients
