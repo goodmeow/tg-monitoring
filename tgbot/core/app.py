@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeChat
 
 from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
@@ -121,7 +121,26 @@ class App:
                 BotCommand(command="qrcode", description="Buat QR code"),
                 BotCommand(command="version", description="Info versi bot"),
             ]
-            await self.bot.set_my_commands(cmds)
+            scopes = [None]
+            try:
+                chat_id = int(self.cfg.chat_id)
+            except Exception:
+                chat_id = self.cfg.chat_id
+            scopes.append(BotCommandScopeChat(chat_id=chat_id))
+            ctrl = self.cfg.control_chat_id
+            if ctrl and ctrl != self.cfg.chat_id:
+                try:
+                    ctrl_id = int(ctrl)
+                except Exception:
+                    ctrl_id = ctrl
+                scopes.append(BotCommandScopeChat(chat_id=ctrl_id))
+
+            for scope in scopes:
+                try:
+                    await self.bot.delete_my_commands(scope=scope)
+                except Exception:
+                    self.log.debug("delete_my_commands failed", exc_info=True)
+                await self.bot.set_my_commands(cmds, scope=scope)
         except Exception:
             self.log.warning("set_my_commands failed", exc_info=True)
 
