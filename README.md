@@ -30,6 +30,7 @@ Optional tuning (defaults in code):
 - `ENABLE_INODES=false`
 - `INODE_FREE_PCT_WARN=0.10`
 - `STATE_FILE=data/state.json`
+- `LOCK_FILE=data/tg-monitor.pid` (pidfile untuk mencegah instance ganda)
 
 ### 2. Install Dependencies
 
@@ -129,6 +130,7 @@ systemctl --user enable --now tg-monitor.service
 - `/help` - Show available commands with inline menu
 - `/rss` - RSS feed management (if enabled)
 - `/qrcode <text>` - Generate a QR code for text or replied message
+- `/version` - Show current tg-monitoring build info
 
 ## Technical Stack
 
@@ -170,6 +172,7 @@ tgbot/
 - Node Exporter runs on port 9100 by default
 - State persistence in `data/state.json`
 - Legacy entrypoint `python -m monitor.main` redirects to `tgbot.main`
+- Singleton guard via `LOCK_FILE` ensures hanya satu instance bot berjalan
 
 ## Requirements
 

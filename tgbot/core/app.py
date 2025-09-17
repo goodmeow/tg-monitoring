@@ -29,6 +29,7 @@ from aiogram.types import BotCommand
 
 from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
+from tgbot.version import get_version
 from tgbot.stores.state_store import StateStore
 from tgbot.stores.rss_store import RssStore
 from tgbot.clients.node_exporter import NodeExporterClient
@@ -42,12 +43,15 @@ class AppContext:
     dp: Dispatcher
     stores: Dict[str, Any]
     clients: Dict[str, Any]
+    version: str
 
 
 class App:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.log = setup_logging()
+        self.version = get_version()
+        self.log.info("tg-monitoring version: %s", self.version)
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
         self.ctx = AppContext(
@@ -56,6 +60,7 @@ class App:
             dp=self.dp,
             stores={},
             clients={},
+            version=self.version,
         )
 
         # Default stores (reuse existing implementations)
@@ -114,6 +119,7 @@ class App:
                 BotCommand(command="rss_rm", description="Hapus langganan RSS"),
                 BotCommand(command="rss_ls", description="Daftar langganan RSS"),
                 BotCommand(command="qrcode", description="Buat QR code"),
+                BotCommand(command="version", description="Info versi bot"),
             ]
             await self.bot.set_my_commands(cmds)
         except Exception:

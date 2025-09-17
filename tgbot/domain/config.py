@@ -104,6 +104,8 @@ class Config:
     long_poll_timeout_sec: int = 50
     control_chat_id: Optional[str] = None  # if None, fallback to chat_id
 
+    lock_file: str = "data/tg-monitor.pid"
+
     # RSS settings
     rss_store_file: str = "data/rss.json"
     rss_poll_interval_sec: int = 300  # 5 minutes
@@ -170,6 +172,7 @@ def load_config() -> Config:
     http_timeout_sec = _get_int(env, "HTTP_TIMEOUT_SEC", 5)
     long_poll_timeout_sec = _get_int(env, "LONG_POLL_TIMEOUT_SEC", 50)
     control_chat_id = _get(env, "CONTROL_CHAT_ID", None)
+    lock_file = _get(env, "LOCK_FILE", "data/tg-monitor.pid")
 
     # RSS
     rss_store_file = _get(env, "RSS_STORE_FILE", "data/rss.json")
@@ -194,10 +197,10 @@ def load_config() -> Config:
         http_timeout_sec=http_timeout_sec,
         long_poll_timeout_sec=long_poll_timeout_sec,
         control_chat_id=control_chat_id,
+        lock_file=lock_file,
         rss_store_file=rss_store_file,
         rss_poll_interval_sec=rss_poll_interval_sec,
         rss_digest_interval_sec=rss_digest_interval_sec,
         rss_digest_items_per_feed=rss_digest_items_per_feed,
         rss_digest_max_total=rss_digest_max_total,
     )
-

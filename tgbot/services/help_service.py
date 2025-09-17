@@ -58,6 +58,9 @@ def _help_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="RSS List", callback_data="help:rss_ls"),
                 InlineKeyboardButton(text="QR Code", callback_data="help:qrcode"),
             ],
+            [
+                InlineKeyboardButton(text="Versi", callback_data="help:version"),
+            ],
         ]
     )
 
@@ -67,6 +70,7 @@ class HelpService:
     cfg: Config
     node: NodeExporterClient
     rss: RssStore
+    version: str
     log: logging.Logger = logging.getLogger("tgbot.help")
 
     def build_router(self) -> Router:
@@ -85,11 +89,21 @@ class HelpService:
                 "• /rss_rm &lt;url&gt; — hapus langganan RSS",
                 "• /rss_ls — daftar langganan RSS",
                 "• /qrcode &lt;text&gt; — buat QR code (atau reply ke pesan)",
+                "• /version — info versi tg-monitoring",
                 "",
                 "Tombol cepat tersedia di bawah.",
             ]
             await message.answer(
                 "\n".join(lines), parse_mode="HTML", reply_markup=_help_keyboard()
+            )
+
+        @router.message(Command("version"))
+        async def cmd_version(message: Message):
+            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+                return
+            await message.answer(
+                f"tg-monitoring version: <code>{self.version}</code>",
+                parse_mode="HTML",
             )
 
         @router.callback_query(F.data == "help:status")
@@ -168,6 +182,17 @@ class HelpService:
             ]
             if query.message:
                 await query.message.answer("\n".join(lines), parse_mode="HTML")
+            await query.answer()
+
+        @router.callback_query(F.data == "help:version")
+        async def cb_version(query: CallbackQuery):
+            chat_id = query.message.chat.id if query.message else query.from_user.id
+            if not _is_allowed(chat_id, self.cfg.allowed_chat_ids):
+                await query.answer()
+                return
+            text = f"<b>Versi</b>\n\ntg-monitoring: <code>{self.version}</code>"
+            if query.message:
+                await query.message.answer(text, parse_mode="HTML")
             await query.answer()
 
         return router
