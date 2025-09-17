@@ -56,6 +56,7 @@ def _help_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="Status", callback_data="help:status"),
                 InlineKeyboardButton(text="RSS List", callback_data="help:rss_ls"),
+                InlineKeyboardButton(text="QR Code", callback_data="help:qrcode"),
             ],
         ]
     )
@@ -83,6 +84,7 @@ class HelpService:
                 "• /rss_add &lt;url&gt; — tambah langganan RSS",
                 "• /rss_rm &lt;url&gt; — hapus langganan RSS",
                 "• /rss_ls — daftar langganan RSS",
+                "• /qrcode &lt;text&gt; — buat QR code (atau reply ke pesan)",
                 "",
                 "Tombol cepat tersedia di bawah.",
             ]
@@ -152,5 +154,20 @@ class HelpService:
                     await query.message.answer("Failed to read RSS list")
                 await query.answer()
 
-        return router
+        @router.callback_query(F.data == "help:qrcode")
+        async def cb_qrcode(query: CallbackQuery):
+            chat_id = query.message.chat.id if query.message else query.from_user.id
+            if not _is_allowed(chat_id, self.cfg.allowed_chat_ids):
+                await query.answer()
+                return
+            lines = [
+                "<b>QR Code</b>",
+                "",
+                "Gunakan /qrcode &lt;text&gt; untuk membuat QR code baru.",
+                "Atau reply ke pesan teks/caption lalu kirim /qrcode tanpa argumen.",
+            ]
+            if query.message:
+                await query.message.answer("\n".join(lines), parse_mode="HTML")
+            await query.answer()
 
+        return router

@@ -89,7 +89,7 @@ class App:
 
     async def _start_modules(self):
         # Load modules from env
-        raw = os.environ.get("MODULES", "monitoring,rss,help,stickers")
+        raw = os.environ.get("MODULES", "monitoring,rss,help,stickers,qrcode")
         names = [n.strip() for n in raw.split(",") if n.strip()]
         for n in names:
             m = self._load_module(n)
@@ -113,6 +113,7 @@ class App:
                 BotCommand(command="rss_add", description="Tambah langganan RSS"),
                 BotCommand(command="rss_rm", description="Hapus langganan RSS"),
                 BotCommand(command="rss_ls", description="Daftar langganan RSS"),
+                BotCommand(command="qrcode", description="Buat QR code"),
             ]
             await self.bot.set_my_commands(cmds)
         except Exception:
