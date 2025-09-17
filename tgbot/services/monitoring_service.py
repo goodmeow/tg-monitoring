@@ -54,10 +54,10 @@ def _bar(pct: float, width: int = 10) -> str:
 def _decorate_with_bar(entry: Dict) -> str:
     if entry.get("type") == "cpu":
         p = float(entry.get("value") or 0)
-        return f"{p*100:.0f}% {_bar(p)}"
+        return f"CPU {p*100:.0f}% {_bar(p)}"
     if entry.get("type") == "mem":
         p = float(entry.get("value") or 0)
-        return f"{p*100:.0f}% {_bar(p)}"
+        return f"Mem used {p*100:.0f}% {_bar(p)}"
     if entry.get("type") == "disk":
         p = float(entry.get("value") or 0)
         mount = entry.get("mount") or "/"
