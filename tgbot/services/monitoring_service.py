@@ -224,7 +224,7 @@ class MonitoringService:
 
                 changes: List[Tuple[str, Dict]] = []
                 for key, cur in results.items():
-                    prev = state.get_check(key)
+                    prev = await state.get_check(key)
                     prev_status = prev.get("status") if prev else "unknown"
                     consec = prev.get("consecutive", 0) if prev else 0
 
@@ -250,9 +250,11 @@ class MonitoringService:
                             "last_ts": time.time(),
                             "message": cur["message"],
                         }
-                        state.set_check(key, cur_state)
+                        await state.set_check(key, cur_state)
 
-                state.save()
+                # Save state after processing all checks
+                if hasattr(state, 'save'):
+                    state.save()
 
                 if changes:
                     target_chat = cfg.chat_id or cfg.control_chat_id

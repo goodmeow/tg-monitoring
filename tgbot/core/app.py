@@ -29,9 +29,12 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 
 from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
+from tgbot.core.database import DatabaseManager
 from tgbot.version import get_version
 from tgbot.stores.state_store import StateStore
 from tgbot.stores.rss_store import RssStore
+from tgbot.stores.state_store_v2 import HybridStateStore
+from tgbot.stores.rss_store_v2 import HybridRssStore
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.clients.feed_client import FeedClient
 
@@ -44,6 +47,7 @@ class AppContext:
     stores: Dict[str, Any]
     clients: Dict[str, Any]
     version: str
+    db_manager: DatabaseManager
 
 
 class App:
@@ -54,6 +58,10 @@ class App:
         self.log.info("tg-monitoring version: %s", self.version)
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
+
+        # Initialize database manager
+        self.db_manager = DatabaseManager(cfg)
+
         self.ctx = AppContext(
             cfg=cfg,
             bot=self.bot,
@@ -61,11 +69,16 @@ class App:
             stores={},
             clients={},
             version=self.version,
+            db_manager=self.db_manager,
         )
 
-        # Default stores (reuse existing implementations)
-        self.ctx.stores["state"] = StateStore(cfg.state_file)
-        self.ctx.stores["rss"] = RssStore(cfg.rss_store_file)
+        # Use hybrid stores (PostgreSQL with JSON fallback)
+        self.ctx.stores["state"] = HybridStateStore(
+            self.db_manager, cfg.state_file, cfg.memory_cache_size
+        )
+        self.ctx.stores["rss"] = HybridRssStore(
+            self.db_manager, cfg.rss_store_file, cfg.memory_cache_size
+        )
 
         # Default clients
         self.ctx.clients["node_exporter"] = NodeExporterClient(
@@ -162,6 +175,9 @@ class App:
         self.log.info("Modules stopped")
 
     async def run(self):
+        # Initialize database first
+        await self.db_manager.initialize()
+
         await self._start_modules()
         try:
             await self.dp.start_polling(
@@ -170,3 +186,5 @@ class App:
             )
         finally:
             await self._stop_modules()
+            # Close database connection
+            await self.db_manager.close()
