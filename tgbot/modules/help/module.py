@@ -33,9 +33,9 @@ class Module(BaseModule):
             self.ctx.cfg,
             self.ctx.clients["node_exporter"],
             self.ctx.stores["rss"],
+            self.ctx.version,
         )  # type: ignore[attr-defined]
         return [self.service.build_router()]
 
     def tasks(self, ctx: Any) -> List[Coroutine[Any, Any, None]]:
         return []
-

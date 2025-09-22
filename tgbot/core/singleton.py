@@ -18,18 +18,29 @@
 
 from __future__ import annotations
 
-import asyncio
-
-from tgbot.domain.config import load_config
-from tgbot.core.app import App
-from tgbot.core.singleton import pidfile_lock
-
-
-def main():
-    cfg = load_config()
-    with pidfile_lock(cfg.lock_file):
-        asyncio.run(App(cfg).run())
+import errno
+import fcntl
+import os
+from contextlib import contextmanager
 
 
-if __name__ == "__main__":
-    main()
+@contextmanager
+def pidfile_lock(path: str):
+    """Prevent multiple bot instances by acquiring an advisory file lock."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as fh:
+        try:
+            fcntl.lockf(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno in (errno.EACCES, errno.EAGAIN):
+                raise RuntimeError("Another tg-monitoring instance is already running") from exc
+            raise
+        fh.write(str(os.getpid()))
+        fh.flush()
+        try:
+            yield
+        finally:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass

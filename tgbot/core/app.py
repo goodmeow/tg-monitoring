@@ -25,10 +25,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeChat
 
 from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
+from tgbot.version import get_version
 from tgbot.stores.state_store import StateStore
 from tgbot.stores.rss_store import RssStore
 from tgbot.clients.node_exporter import NodeExporterClient
@@ -42,12 +43,15 @@ class AppContext:
     dp: Dispatcher
     stores: Dict[str, Any]
     clients: Dict[str, Any]
+    version: str
 
 
 class App:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.log = setup_logging()
+        self.version = get_version()
+        self.log.info("tg-monitoring version: %s", self.version)
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
         self.ctx = AppContext(
@@ -56,6 +60,7 @@ class App:
             dp=self.dp,
             stores={},
             clients={},
+            version=self.version,
         )
 
         # Default stores (reuse existing implementations)
@@ -89,7 +94,7 @@ class App:
 
     async def _start_modules(self):
         # Load modules from env
-        raw = os.environ.get("MODULES", "monitoring,rss,help,stickers")
+        raw = os.environ.get("MODULES", "monitoring,rss,help,stickers,qrcode")
         names = [n.strip() for n in raw.split(",") if n.strip()]
         for n in names:
             m = self._load_module(n)
@@ -113,8 +118,24 @@ class App:
                 BotCommand(command="rss_add", description="Tambah langganan RSS"),
                 BotCommand(command="rss_rm", description="Hapus langganan RSS"),
                 BotCommand(command="rss_ls", description="Daftar langganan RSS"),
+                BotCommand(command="qrcode", description="Buat QR code"),
+                BotCommand(command="version", description="Info versi bot"),
             ]
-            await self.bot.set_my_commands(cmds)
+            scopes = [None]
+            if not self.cfg.allow_any_chat:
+                seen: set[Any] = set()
+                for target in self.cfg.allowed_chat_ids:
+                    if target in seen or target is None:
+                        continue
+                    seen.add(target)
+                    scopes.append(BotCommandScopeChat(chat_id=target))
+
+            for scope in scopes:
+                try:
+                    await self.bot.delete_my_commands(scope=scope)
+                except Exception:
+                    self.log.debug("delete_my_commands failed", exc_info=True)
+                await self.bot.set_my_commands(cmds, scope=scope)
         except Exception:
             self.log.warning("set_my_commands failed", exc_info=True)
 

@@ -38,8 +38,10 @@ from tgbot.clients.feed_client import FeedClient
 from tgbot.stores.rss_store import RssStore
 
 
-def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
-    for allowed in allowed_list:
+def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
+    if cfg.allow_any_chat:
+        return True
+    for allowed in cfg.allowed_chat_ids:
         if isinstance(allowed, int) and chat_id == allowed:
             return True
         if isinstance(allowed, str) and str(chat_id) == allowed:
@@ -104,7 +106,7 @@ class RssService:
 
         @router.message(Command("rss_add"))
         async def rss_add(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(message.chat.id, self.cfg):
                 return
             parts = (message.text or "").split(maxsplit=1)
             if len(parts) < 2:
@@ -120,7 +122,7 @@ class RssService:
 
         @router.message(Command("rss_rm"))
         async def rss_rm(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(message.chat.id, self.cfg):
                 return
             parts = (message.text or "").split(maxsplit=1)
             if len(parts) < 2:
@@ -133,7 +135,7 @@ class RssService:
 
         @router.message(Command("rss_ls"))
         async def rss_ls(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(message.chat.id, self.cfg):
                 return
             feeds = self.rss.list_feeds(message.chat.id)
             counts = self.rss.get_pending_counts(message.chat.id)

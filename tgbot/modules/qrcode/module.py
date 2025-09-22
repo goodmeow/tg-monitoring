@@ -18,18 +18,20 @@
 
 from __future__ import annotations
 
-import asyncio
+from typing import Any, List
+from aiogram import Router
 
-from tgbot.domain.config import load_config
-from tgbot.core.app import App
-from tgbot.core.singleton import pidfile_lock
-
-
-def main():
-    cfg = load_config()
-    with pidfile_lock(cfg.lock_file):
-        asyncio.run(App(cfg).run())
+from tgbot.modules.base import Module as BaseModule
+from tgbot.services.qrcode_service import QrCodeService
 
 
-if __name__ == "__main__":
-    main()
+class Module(BaseModule):
+    name = "qrcode"
+
+    def routers(self) -> List[Router]:
+        self.service = QrCodeService(self.ctx.cfg)
+        return [self.service.build_router()]
+
+    def tasks(self, ctx: Any) -> List:
+        return []
+
