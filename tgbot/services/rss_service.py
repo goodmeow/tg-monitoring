@@ -200,9 +200,9 @@ class RssService:
         rss = self.rss
         while True:
             try:
-                feeds = rss.all_feeds()
+                feeds = await rss.all_feeds()
                 for url in feeds:
-                    meta = rss.get_feed_meta(url)
+                    meta = await rss.get_feed_meta(url)
                     try:
                         parsed = self.client.parse(
                             url,
@@ -221,7 +221,7 @@ class RssService:
                     except Exception:
                         modified = None
                     if etag or modified:
-                        rss.update_feed_meta(url, etag, modified)
+                        await rss.update_feed_meta(url, etag, modified)
 
                     entries = list(getattr(parsed, "entries", []) or [])
                     for e in entries:
@@ -233,13 +233,14 @@ class RssService:
                         if not iid:
                             continue
                         # seen dedupe
-                        meta = rss.get_feed_meta(url)
+                        meta = await rss.get_feed_meta(url)
                         seen = meta.get("seen_ids", [])
                         if iid in seen:
                             continue
                         title = getattr(e, "title", None) or "(no title)"
                         link = getattr(e, "link", None) or ""
                         author = getattr(e, "author", None) or ""
+                        description = getattr(e, "summary", None) or getattr(e, "description", None) or ""
                         ts = 0
                         try:
                             ts = int(_time.mktime(getattr(e, "published_parsed", None)))
@@ -250,12 +251,14 @@ class RssService:
                             "title": title,
                             "link": link,
                             "author": author,
+                            "description": description,
                             "published_ts": ts,
                         }
-                        for cid in rss.subscribers(url):
-                            rss.add_pending_item(cid, url, item)
-                        rss.add_seen_id(url, iid)
-                rss.save()
+                        subscribers = await rss.subscribers(url)
+                        for cid in subscribers:
+                            await rss.add_pending_item(cid, url, item)
+                        await rss.add_seen_id(url, iid)
+                await rss.save()
             except Exception:
                 self.log.warning("rss poll iteration failed", exc_info=True)
             await asyncio.sleep(cfg.rss_poll_interval_sec)
@@ -267,24 +270,23 @@ class RssService:
         while True:
             try:
                 # Find all chats that have RSS feeds
-                data = rss.data
-                chats = list((data.get("chats") or {}).keys())
+                chats = await rss.get_chat_ids()
                 now = _time.time()
                 for cid in chats:
-                    last = rss.get_last_digest(cid)
+                    last = await rss.get_last_digest(cid)
                     if now - last < cfg.rss_digest_interval_sec:
                         continue
-                    pending = rss.pop_pending_digest(cid)
+                    pending = await rss.pop_pending_digest(cid)
                     if not any(pending.values()):
-                        rss.set_last_digest(cid, now)
-                        rss.save()
+                        await rss.set_last_digest(cid, now)
+                        await rss.save()
                         continue
                     msg = _compose_rss_digest_html(host, pending, cfg)
                     await bot.send_message(
                         cid, msg, parse_mode="HTML", disable_web_page_preview=True
                     )
-                    rss.set_last_digest(cid, now)
-                    rss.save()
+                    await rss.set_last_digest(cid, now)
+                    await rss.save()
             except Exception:
                 self.log.warning("rss digest iteration failed", exc_info=True)
             await asyncio.sleep(300)
