@@ -4,6 +4,7 @@
 *.env.*
 .envrc
 !.env.example
+!.env.docker.example
 
 secrets/
 .secrets/

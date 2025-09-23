@@ -34,7 +34,7 @@ from tgbot.domain.config import Config
 from tgbot.domain.evaluator import Thresholds, evaluate
 import logging
 from tgbot.clients.node_exporter import NodeExporterClient
-from tgbot.stores.state_store import StateStore
+from tgbot.stores.state_store_v2 import HybridStateStore
 
 
 def _human_gib(n: float) -> str:
@@ -54,10 +54,10 @@ def _bar(pct: float, width: int = 10) -> str:
 def _decorate_with_bar(entry: Dict) -> str:
     if entry.get("type") == "cpu":
         p = float(entry.get("value") or 0)
-        return f"{p*100:.0f}% {_bar(p)}"
+        return f"CPU {p*100:.0f}% {_bar(p)}"
     if entry.get("type") == "mem":
         p = float(entry.get("value") or 0)
-        return f"{p*100:.0f}% {_bar(p)}"
+        return f"Mem used {p*100:.0f}% {_bar(p)}"
     if entry.get("type") == "disk":
         p = float(entry.get("value") or 0)
         mount = entry.get("mount") or "/"
@@ -156,8 +156,10 @@ def _top_mem_processes(n: int = 3):
     return procs[:n]
 
 
-def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
-    for allowed in allowed_list:
+def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
+    if cfg.allow_any_chat:
+        return True
+    for allowed in cfg.allowed_chat_ids:
         if isinstance(allowed, int) and chat_id == allowed:
             return True
         if isinstance(allowed, str) and str(chat_id) == allowed:
@@ -168,7 +170,7 @@ def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
 @dataclass
 class MonitoringService:
     cfg: Config
-    state: StateStore
+    state: HybridStateStore
     client: NodeExporterClient
     log: logging.Logger = logging.getLogger("tgbot.monitoring")
 
@@ -177,7 +179,7 @@ class MonitoringService:
 
         @router.message(Command("status"))
         async def cmd_status(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(message.chat.id, self.cfg):
                 return
             try:
                 stats = await self.client.fetch_stats()
@@ -222,7 +224,7 @@ class MonitoringService:
 
                 changes: List[Tuple[str, Dict]] = []
                 for key, cur in results.items():
-                    prev = state.get_check(key)
+                    prev = await state.get_check(key)
                     prev_status = prev.get("status") if prev else "unknown"
                     consec = prev.get("consecutive", 0) if prev else 0
 
@@ -237,7 +239,7 @@ class MonitoringService:
                         }
                         if prev_status != "alert" and consec >= cfg.alert_min_consecutive:
                             changes.append(("ALERT", cur))
-                        state.set_check(key, cur_state)
+                        await state.set_check(key, cur_state)
                     else:
                         if prev_status == "alert":
                             changes.append(("RECOVERED", cur))
@@ -248,17 +250,23 @@ class MonitoringService:
                             "last_ts": time.time(),
                             "message": cur["message"],
                         }
-                        state.set_check(key, cur_state)
+                        await state.set_check(key, cur_state)
 
-                state.save()
+                # Save state after processing all checks
+                if hasattr(state, 'save'):
+                    state.save()
 
                 if changes:
-                    await bot.send_message(
-                        cfg.chat_id,
-                        _compose_changes_message_html(changes, host),
-                        disable_web_page_preview=True,
-                        parse_mode="HTML",
-                    )
+                    target_chat = cfg.chat_id or cfg.control_chat_id
+                    if not target_chat:
+                        self.log.warning("No alert chat configured; skipping notification")
+                    else:
+                        await bot.send_message(
+                            target_chat,
+                            _compose_changes_message_html(changes, host),
+                            disable_web_page_preview=True,
+                            parse_mode="HTML",
+                        )
             except Exception:
                 self.log.warning("monitor loop iteration failed", exc_info=True)
 

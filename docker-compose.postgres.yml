@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  tg-monitoring:
+    build: .
+    container_name: tg-monitoring
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://tguser:changeme@postgres:5432/tg_monitoring?sslmode=disable}
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    networks:
+      - tg-monitoring
+
+  postgres:
+    image: postgres:latest
+    container_name: tg-monitoring-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tg_monitoring}
+      POSTGRES_USER: ${POSTGRES_USER:-tguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - tg-monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tguser} -d ${POSTGRES_DB:-tg_monitoring}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  tg-monitoring:
+    driver: bridge

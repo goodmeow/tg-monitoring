@@ -41,8 +41,10 @@ from tgbot.stores.rss_store import RssStore
 from tgbot.services.monitoring_service import _compose_status_message_html
 
 
-def _is_allowed(chat_id: int | str, allowed_list: List[int | str]) -> bool:
-    for allowed in allowed_list:
+def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
+    if cfg.allow_any_chat:
+        return True
+    for allowed in cfg.allowed_chat_ids:
         if isinstance(allowed, int) and chat_id == allowed:
             return True
         if isinstance(allowed, str) and str(chat_id) == allowed:
@@ -56,6 +58,10 @@ def _help_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="Status", callback_data="help:status"),
                 InlineKeyboardButton(text="RSS List", callback_data="help:rss_ls"),
+                InlineKeyboardButton(text="QR Code", callback_data="help:qrcode"),
+            ],
+            [
+                InlineKeyboardButton(text="Versi", callback_data="help:version"),
             ],
         ]
     )
@@ -66,6 +72,7 @@ class HelpService:
     cfg: Config
     node: NodeExporterClient
     rss: RssStore
+    version: str
     log: logging.Logger = logging.getLogger("tgbot.help")
 
     def build_router(self) -> Router:
@@ -73,7 +80,7 @@ class HelpService:
 
         @router.message(Command("help"))
         async def cmd_help(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(message.chat.id, self.cfg):
                 return
             lines = [
                 "<b>Bot Menu</b>",
@@ -83,6 +90,8 @@ class HelpService:
                 "• /rss_add &lt;url&gt; — tambah langganan RSS",
                 "• /rss_rm &lt;url&gt; — hapus langganan RSS",
                 "• /rss_ls — daftar langganan RSS",
+                "• /qrcode &lt;text&gt; — buat QR code (atau reply ke pesan)",
+                "• /version — info versi tg-monitoring",
                 "",
                 "Tombol cepat tersedia di bawah.",
             ]
@@ -90,10 +99,19 @@ class HelpService:
                 "\n".join(lines), parse_mode="HTML", reply_markup=_help_keyboard()
             )
 
+        @router.message(Command("version"))
+        async def cmd_version(message: Message):
+            if not _is_allowed(message.chat.id, self.cfg):
+                return
+            await message.answer(
+                f"tg-monitoring version: <code>{self.version}</code>",
+                parse_mode="HTML",
+            )
+
         @router.callback_query(F.data == "help:status")
         async def cb_status(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(chat_id, self.cfg):
                 await query.answer()
                 return
             try:
@@ -124,13 +142,13 @@ class HelpService:
         @router.callback_query(F.data == "help:rss_ls")
         async def cb_rss_ls(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg.allowed_chat_ids):
+            if not _is_allowed(chat_id, self.cfg):
                 await query.answer()
                 return
             try:
-                feeds = self.rss.list_feeds(chat_id)
-                counts = self.rss.get_pending_counts(chat_id)
-                last = self.rss.get_last_digest(chat_id)
+                feeds = await self.rss.get_feeds(chat_id)
+                counts = await self.rss.get_pending_counts(chat_id)
+                last = await self.rss.get_last_digest(chat_id)
                 next_ts = last + self.cfg.rss_digest_interval_sec
                 now = time.time()
                 rem = max(0, int(next_ts - now))
@@ -152,5 +170,31 @@ class HelpService:
                     await query.message.answer("Failed to read RSS list")
                 await query.answer()
 
-        return router
+        @router.callback_query(F.data == "help:qrcode")
+        async def cb_qrcode(query: CallbackQuery):
+            chat_id = query.message.chat.id if query.message else query.from_user.id
+            if not _is_allowed(chat_id, self.cfg):
+                await query.answer()
+                return
+            lines = [
+                "<b>QR Code</b>",
+                "",
+                "Gunakan /qrcode &lt;text&gt; untuk membuat QR code baru.",
+                "Atau reply ke pesan teks/caption lalu kirim /qrcode tanpa argumen.",
+            ]
+            if query.message:
+                await query.message.answer("\n".join(lines), parse_mode="HTML")
+            await query.answer()
 
+        @router.callback_query(F.data == "help:version")
+        async def cb_version(query: CallbackQuery):
+            chat_id = query.message.chat.id if query.message else query.from_user.id
+            if not _is_allowed(chat_id, self.cfg):
+                await query.answer()
+                return
+            text = f"<b>Versi</b>\n\ntg-monitoring: <code>{self.version}</code>"
+            if query.message:
+                await query.message.answer(text, parse_mode="HTML")
+            await query.answer()
+
+        return router
