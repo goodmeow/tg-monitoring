@@ -147,3 +147,4 @@ Core dependencies are minimal and focused:
 
 #### Phase 4: Follow-up Features
 - Expand admin commands to manage per-chat settings and module toggles once the database layer is in place
+- on error lanjut untuk try debugging, kode harus konsisten dan secure

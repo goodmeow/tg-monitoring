@@ -146,9 +146,9 @@ class HelpService:
                 await query.answer()
                 return
             try:
-                feeds = self.rss.list_feeds(chat_id)
-                counts = self.rss.get_pending_counts(chat_id)
-                last = self.rss.get_last_digest(chat_id)
+                feeds = await self.rss.get_feeds(chat_id)
+                counts = await self.rss.get_pending_counts(chat_id)
+                last = await self.rss.get_last_digest(chat_id)
                 next_ts = last + self.cfg.rss_digest_interval_sec
                 now = time.time()
                 rem = max(0, int(next_ts - now))

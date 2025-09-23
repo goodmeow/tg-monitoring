@@ -35,7 +35,7 @@ from aiogram.types import Message
 
 from tgbot.domain.config import Config
 from tgbot.clients.feed_client import FeedClient
-from tgbot.stores.rss_store import RssStore
+from tgbot.stores.rss_store_v2 import HybridRssStore
 
 
 def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
@@ -97,7 +97,7 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
 @dataclass
 class RssService:
     cfg: Config
-    rss: RssStore
+    rss: HybridRssStore
     client: FeedClient
     log: logging.Logger = logging.getLogger("tgbot.rss")
 
@@ -116,9 +116,27 @@ class RssService:
             if len(url) > 2000 or not _valid_url_http_https(url):
                 await message.answer("Invalid URL (only http/https)")
                 return
-            self.rss.add_feed(message.chat.id, url)
-            self.rss.save()
-            await message.answer(f"Subscribed to feed:\n{_html.escape(url)}")
+
+            try:
+                # Check if feed already exists for this chat
+                existing_feeds = await self.rss.get_feeds(message.chat.id)
+                if url in existing_feeds:
+                    await message.answer(f"Feed already subscribed:\n{_html.escape(url)}")
+                    return
+
+                # Add the feed
+                await self.rss.add_feed(message.chat.id, url)
+                # Note: PostgreSQL operations auto-commit, JSON fallback handled in store
+
+                # Get updated feed count
+                updated_feeds = await self.rss.get_feeds(message.chat.id)
+                await message.answer(
+                    f"✅ Subscribed to feed:\n{_html.escape(url)}\n\n"
+                    f"Total feeds: {len(updated_feeds)}"
+                )
+            except Exception as e:
+                self.log.error(f"Failed to add RSS feed {url}: {e}")
+                await message.answer(f"❌ Failed to add feed. Please try again.")
 
         @router.message(Command("rss_rm"))
         async def rss_rm(message: Message):
@@ -129,17 +147,38 @@ class RssService:
                 await message.answer("Usage: /rss_rm <url>")
                 return
             url = parts[1].strip()
-            self.rss.remove_feed(message.chat.id, url)
-            self.rss.save()
-            await message.answer(f"Unsubscribed:\n{_html.escape(url)}")
+
+            try:
+                # Check if feed exists for this chat
+                existing_feeds = await self.rss.get_feeds(message.chat.id)
+                if url not in existing_feeds:
+                    await message.answer(f"Feed not found:\n{_html.escape(url)}")
+                    return
+
+                # Remove the feed
+                success = await self.rss.remove_feed(message.chat.id, url)
+                # Note: PostgreSQL operations auto-commit, JSON fallback handled in store
+
+                if success:
+                    # Get updated feed count
+                    updated_feeds = await self.rss.get_feeds(message.chat.id)
+                    await message.answer(
+                        f"✅ Unsubscribed from:\n{_html.escape(url)}\n\n"
+                        f"Remaining feeds: {len(updated_feeds)}"
+                    )
+                else:
+                    await message.answer(f"❌ Failed to remove feed:\n{_html.escape(url)}")
+            except Exception as e:
+                self.log.error(f"Failed to remove RSS feed {url}: {e}")
+                await message.answer(f"❌ Failed to remove feed. Please try again.")
 
         @router.message(Command("rss_ls"))
         async def rss_ls(message: Message):
             if not _is_allowed(message.chat.id, self.cfg):
                 return
-            feeds = self.rss.list_feeds(message.chat.id)
-            counts = self.rss.get_pending_counts(message.chat.id)
-            last = self.rss.get_last_digest(message.chat.id)
+            feeds = await self.rss.get_feeds(message.chat.id)
+            counts = await self.rss.get_pending_counts(message.chat.id)
+            last = await self.rss.get_last_digest(message.chat.id)
             next_ts = last + self.cfg.rss_digest_interval_sec
             now = _time.time()
             rem = max(0, int(next_ts - now))
@@ -194,7 +233,8 @@ class RssService:
                         if not iid:
                             continue
                         # seen dedupe
-                        seen = rss.get_feed_meta(url).get("seen_ids", [])
+                        meta = rss.get_feed_meta(url)
+                        seen = meta.get("seen_ids", [])
                         if iid in seen:
                             continue
                         title = getattr(e, "title", None) or "(no title)"
@@ -226,7 +266,9 @@ class RssService:
         host = socket.gethostname()
         while True:
             try:
-                chats = list((rss.data.get("chats") or {}).keys())
+                # Find all chats that have RSS feeds
+                data = rss.data
+                chats = list((data.get("chats") or {}).keys())
                 now = _time.time()
                 for cid in chats:
                     last = rss.get_last_digest(cid)

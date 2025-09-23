@@ -133,14 +133,15 @@ CREATE TABLE IF NOT EXISTS monitoring_state (
 
 CREATE TABLE IF NOT EXISTS rss_feeds (
     id SERIAL PRIMARY KEY,
-    url VARCHAR(2048) NOT NULL UNIQUE,
+    url VARCHAR(2048) NOT NULL,
     title VARCHAR(512),
     description TEXT,
     chat_id BIGINT REFERENCES chats(id) ON DELETE CASCADE,
     is_active BOOLEAN DEFAULT true,
     last_polled_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(url, chat_id)
 );
 
 CREATE TABLE IF NOT EXISTS rss_items (

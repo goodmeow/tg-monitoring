@@ -50,12 +50,12 @@ class PostgreSQLRssStore:
                     chat_id_int
                 )
 
-                # Add feed
+                # Add feed with proper duplicate handling per chat
                 await conn.execute(
                     """INSERT INTO rss_feeds (url, chat_id)
                        VALUES ($1, $2)
-                       ON CONFLICT (url) DO UPDATE SET
-                       chat_id = $2, is_active = true, updated_at = NOW()""",
+                       ON CONFLICT (url, chat_id) DO UPDATE SET
+                       is_active = true, updated_at = NOW()""",
                     url, chat_id_int
                 )
         except Exception as e:
@@ -245,13 +245,16 @@ class HybridRssStore:
             await self.pg_store.add_feed(chat_id, url)
         else:
             await self.json_store.add_feed(chat_id, url)
+            await self.json_store.flush()  # Auto-save for JSON
 
     async def remove_feed(self, chat_id: int | str, url: str) -> bool:
         """Remove RSS feed with fallback."""
         if self.db_manager.is_available:
             return await self.pg_store.remove_feed(chat_id, url)
         else:
-            return await self.json_store.remove_feed(chat_id, url)
+            result = await self.json_store.remove_feed(chat_id, url)
+            await self.json_store.flush()  # Auto-save for JSON
+            return result
 
     async def get_feeds(self, chat_id: int | str) -> List[str]:
         """Get feeds with fallback."""
@@ -259,6 +262,40 @@ class HybridRssStore:
             return await self.pg_store.get_feeds(chat_id)
         else:
             return await self.json_store.get_feeds(chat_id)
+
+    async def get_pending_counts(self, chat_id: int | str) -> Dict[str, int]:
+        """Get pending item counts with fallback."""
+        if self.db_manager.is_available:
+            # For PostgreSQL, return empty counts for now
+            # TODO: Implement proper pending counts in PostgreSQL store
+            return {}
+        else:
+            return await self.json_store.get_pending_counts(chat_id)
+
+    async def get_last_digest(self, chat_id: int | str) -> float:
+        """Get last digest timestamp with fallback."""
+        if self.db_manager.is_available:
+            return await self.pg_store.get_last_digest_time(chat_id)
+        else:
+            return await self.json_store.get_last_digest(chat_id)
+
+    async def set_last_digest(self, chat_id: int | str, timestamp: float) -> None:
+        """Set last digest timestamp with fallback."""
+        if self.db_manager.is_available:
+            await self.pg_store.set_last_digest_time(chat_id, timestamp)
+        else:
+            await self.json_store.set_last_digest(chat_id, timestamp)
+
+    async def save(self) -> None:
+        """Save data (compatibility method)."""
+        try:
+            if not self.db_manager.is_available:
+                await self.json_store.flush()
+            # For PostgreSQL, no explicit save needed as operations are immediate
+            # Just return successfully
+        except Exception as e:
+            logger.error(f"Error in save operation: {e}")
+            # Don't raise to avoid breaking the flow
 
     # Compatibility methods for existing services
     def all_feeds(self) -> List[str]:
@@ -326,7 +363,7 @@ class HybridRssStore:
         except Exception:
             return {"chats": {}, "feeds_meta": {}, "pending": {}}
 
-    def get_last_digest(self, chat_id: int | str) -> float:
+    def get_last_digest_sync(self, chat_id: int | str) -> float:
         """Get last digest timestamp (sync wrapper)."""
         import asyncio
         try:
@@ -338,7 +375,7 @@ class HybridRssStore:
         except Exception:
             return 0.0
 
-    def set_last_digest(self, chat_id: int | str, timestamp: float) -> None:
+    def set_last_digest_sync(self, chat_id: int | str, timestamp: float) -> None:
         """Set last digest timestamp (sync wrapper)."""
         import asyncio
         try:
@@ -346,7 +383,7 @@ class HybridRssStore:
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.pg_store.set_last_digest_time(chat_id, timestamp))
             else:
-                self.json_store.set_last_digest(chat_id, timestamp)
+                self.json_store.set_last_digest_sync(chat_id, timestamp)
         except Exception:
             pass
 
