@@ -34,7 +34,7 @@ from tgbot.domain.config import Config
 from tgbot.domain.evaluator import Thresholds, evaluate
 import logging
 from tgbot.clients.node_exporter import NodeExporterClient
-from tgbot.stores.state_store import StateStore
+from tgbot.stores.state_store_v2 import HybridStateStore
 
 
 def _human_gib(n: float) -> str:
@@ -170,7 +170,7 @@ def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
 @dataclass
 class MonitoringService:
     cfg: Config
-    state: StateStore
+    state: HybridStateStore
     client: NodeExporterClient
     log: logging.Logger = logging.getLogger("tgbot.monitoring")
 
@@ -239,7 +239,7 @@ class MonitoringService:
                         }
                         if prev_status != "alert" and consec >= cfg.alert_min_consecutive:
                             changes.append(("ALERT", cur))
-                        state.set_check(key, cur_state)
+                        await state.set_check(key, cur_state)
                     else:
                         if prev_status == "alert":
                             changes.append(("RECOVERED", cur))
