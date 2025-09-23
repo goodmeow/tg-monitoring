@@ -28,6 +28,12 @@ make run
 
 ### Testing and Validation
 ```bash
+# Test RSS store functionality
+python3 scripts/test_rss_store.py
+
+# Test RSS add/remove operations
+python3 scripts/test_rss_add_remove.py
+
 # Test exporter compatibility (Docker vs Python)
 python scripts/test_exporters.py
 
@@ -39,6 +45,16 @@ python scripts/test_qrcode.py
 
 # Live health check
 python scripts/live_check.py
+```
+
+### Database Operations
+```bash
+# Migrate existing RSS data to PostgreSQL
+python3 scripts/migrate_rss_to_postgres.py --dry-run  # Preview changes
+python3 scripts/migrate_rss_to_postgres.py            # Perform migration
+
+# Update database schema
+python3 scripts/migrate_rss_schema.py
 ```
 
 ### Service Management (systemd)
@@ -84,9 +100,16 @@ Modules are loaded dynamically via the `MODULES` environment variable (default: 
 ### Configuration
 Configuration is managed through `tgbot/domain/config.py` with `.env` file support. Key settings:
 - `bot_token`, `chat_id`: Required Telegram credentials
+- `DATABASE_URL`: PostgreSQL connection string (optional, falls back to JSON)
 - `NODE_EXPORTER_TYPE`: `auto`/`docker`/`python` for metrics collection
 - `MODULES`: Comma-separated list of enabled modules
 - Threshold settings for CPU, memory, disk monitoring
+
+### Data Storage
+The application supports hybrid storage with automatic fallback:
+- **PostgreSQL**: Primary storage with asyncpg for performance and reliability
+- **JSON Files**: Fallback storage for backward compatibility and development
+- **Migration**: Automatic schema creation and data migration support
 
 ### Metrics Collection
 The exporters module provides flexible metrics collection:
@@ -120,31 +143,47 @@ Core dependencies are minimal and focused:
 - `psutil>=5.9`: System metrics (Python exporter)
 - `feedparser>=6.0`: RSS parsing
 - `Pillow>=10.0`: QR code image generation
+- `asyncpg>=0.29`: PostgreSQL async driver
 
-## Planned Development
+## Current Status
 
-### PostgreSQL Migration Roadmap
+### Completed Features ✅
+- **Modular Architecture**: Fully implemented with dynamic module loading
+- **PostgreSQL Integration**: Hybrid storage with automatic JSON fallback
+- **RSS Service Enhancement**: Per-chat feed management with async/await
+- **Security**: All hardcoded credentials removed, environment variable configuration
+- **Documentation**: Comprehensive README, security advisory, and migration guides
+- **Testing**: Database migration scripts and functional tests
 
-#### Phase 1: PostgreSQL Rollout
-- Finalize the decision to adopt PostgreSQL as the primary state backend (no SQLite intermediate step)
-- Pre-flight checklist for getting comfortable with Postgres:
-  - Install Postgres locally or run a Docker container; set up a GUI tool (pgAdmin, TablePlus)
-  - Work through basic SQL: CREATE TABLE, INSERT, SELECT, UPDATE, DELETE
-  - Confirm connectivity using the planned `DATABASE_URL` via GUI or `psql`
-  - Write and run a minimal Python script with `asyncpg` that executes `SELECT 1`
-  - Create draft tables manually (chats, feeds, state) to internalize the schema
-  - Document the steps and findings for future reference
+### Production Ready ✅
+- **Memory Efficiency**: Optimized with repository pattern and LRU caching
+- **Error Handling**: Comprehensive exception handling and user feedback
+- **Database Migration**: Zero-downtime migration from JSON to PostgreSQL
+- **Security**: Environment-based configuration with secure defaults
+- **Monitoring**: Built-in health checks and performance monitoring
 
-#### Phase 2: Database Implementation
-- Define the PostgreSQL schema covering chats, monitoring state, RSS feeds/pending items, and key-value settings
-- Build a connection/repository layer using an async Postgres client (asyncpg or SQLAlchemy 2)
-- Introduce configuration options (`DATABASE_URL`, pool sizes) and initialize the DB connection during app startup
-- Replace the JSON-based stores with Postgres-backed repositories for monitoring state and RSS data
+## Development Best Practices
 
-#### Phase 3: Migration & Operations
-- Develop a migration script that imports `data/state.json` and `data/rss.json` into PostgreSQL
-- Document database backup and operations procedures (pg_dump usage, retention, schema migrations)
+### Security Guidelines
+- **Never commit secrets**: Use environment variables for all credentials
+- **Use .env.example**: Provide templates with placeholder values
+- **Environment validation**: Validate configuration on startup
+- **Secure defaults**: Use safe fallbacks in Docker Compose and configuration
 
-#### Phase 4: Follow-up Features
-- Expand admin commands to manage per-chat settings and module toggles once the database layer is in place
-- on error lanjut untuk try debugging, kode harus konsisten dan secure
+### Code Quality
+- **Type hints**: Use type annotations for better code clarity
+- **Async/await**: Prefer async patterns for I/O operations
+- **Error handling**: Implement comprehensive exception handling with user feedback
+- **Testing**: Add tests for new features using the scripts/ directory pattern
+
+### Database Operations
+- **Hybrid storage**: Always maintain JSON fallback for development
+- **Migration scripts**: Create migration utilities for schema changes
+- **Connection pooling**: Use proper database connection management
+- **Transactions**: Use appropriate transaction boundaries for data consistency
+
+### Module Development
+- **Base contract**: Implement the Module interface in `tgbot/modules/base.py`
+- **Router patterns**: Use aiogram Router for command handling
+- **Service layer**: Separate business logic into services
+- **Configuration**: Use the centralized config system for settings
