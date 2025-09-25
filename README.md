@@ -15,44 +15,54 @@ Lightweight Telegram notifier for a single server using Node Exporter metrics.
 
 ## Quick Start
 
-### 1. Configuration
+### 1. Configure the environment
 
-Create `.env` with at least:
-- `bot_token=...` (your Telegram bot token)
-- `chat_id=...` (your Telegram group/chat ID)
+```bash
+cp .env.example .env
+```
 
-Optional tuning (defaults in code):
-- `SAMPLE_INTERVAL_SEC=15`
-- `ALERT_MIN_CONSECUTIVE=3`
+Open `.env` and set at minimum:
+- `bot_token=...` (the Telegram bot token)
+- `chat_id=...` (the Telegram group or channel that should receive alerts)
+
+Common adjustments (defaults already shipped in the codebase):
 - `NODE_EXPORTER_URL=http://127.0.0.1:9100/metrics`
 - `NODE_EXPORTER_TYPE=auto` (auto/docker/python) **NEW**
 - `DATABASE_URL=` (PostgreSQL connection string, optional) **NEW**
+- `POSTGRES_DB=` / `POSTGRES_USER=` / `POSTGRES_PASSWORD=` (required when using the bundled PostgreSQL Compose file; choose strong, unique secrets)
+- `SAMPLE_INTERVAL_SEC=15`
+- `ALERT_MIN_CONSECUTIVE=3`
 - `CPU_LOAD_PER_CORE_WARN=0.9`
-- `MEM_AVAILABLE_PCT_WARN=0.10` (warn when free RAM ≤ 10%; dashboard shows used%)
+- `MEM_AVAILABLE_PCT_WARN=0.10` (warn when free memory ≤ 10%; dashboards report percentage used)
 - `DISK_USAGE_PCT_WARN=0.85`
 - `ENABLE_INODES=false`
 - `INODE_FREE_PCT_WARN=0.10`
 - `STATE_FILE=data/state.json`
-- `LOCK_FILE=data/tg-monitor.pid` (pidfile untuk mencegah instance ganda)
-- `ALLOW_ANY_CHAT=false` (true = bot menerima perintah dari semua chat tanpa restart)
-- `ALLOWED_CHATS=` (daftar tambahan, pisahkan koma, mis. `-10012345,@mychannel`)
+- `LOCK_FILE=data/tg-monitor.pid`
+- `ALLOW_ANY_CHAT=false` (set to true if the bot should respond in any chat without a restart)
+- `ALLOWED_CHATS=` (comma-separated allow-list additions, e.g. `-10012345,@mychannel`)
 
-### 2. Install Dependencies
+### 2. Install the dependencies
+
+Use the Makefile helper (creates the virtual environment and installs every requirement):
 
 ```bash
-# Create virtual environment (recommended)
+make install
+```
+
+Manual alternative:
+
+```bash
+# Create a virtual environment (recommended)
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
+# Install requirements
 pip install -r requirements.txt
 ```
 
-### 3. Node Exporter Setup
+### 3. Start Node Exporter (Docker by default)
 
-The bot now supports two methods for metrics collection:
-
-#### Option A: Docker Node Exporter (Default)
 ```bash
 docker run -d \
   --name node-exporter \
@@ -61,49 +71,65 @@ docker run -d \
   -v /:/host:ro,rslave \
   prom/node-exporter:latest \
   --path.rootfs=/host
+
+# Optional: verify the metrics endpoint
+curl http://127.0.0.1:9100/metrics | head
 ```
 
-#### Option B: Python Node Exporter (No Docker Required)
-Set `NODE_EXPORTER_TYPE=python` in `.env`. The bot will automatically start a Python-based exporter.
+#### Prefer the Python exporter?
+Set `NODE_EXPORTER_TYPE=python` in `.env` and launch the helper (see `tgbot/modules/exporters/` or `scripts/test_exporters.py`). The bot still scrapes `NODE_EXPORTER_URL`, so ensure the Python exporter process is running and serving that address.
 
-Requirements for Python exporter:
+Additional Python requirements:
 ```bash
 pip install prometheus-client psutil flask
 ```
 
-### Optional: PostgreSQL Setup
+### 4. Run the bot
 
-The bot supports PostgreSQL for enhanced data persistence with automatic fallback to JSON files:
+```bash
+# Start the bot via Makefile (virtualenv is activated automatically)
+make run
+
+# Or run manually
+source .venv/bin/activate
+python -m tgbot.main
+```
+
+### 5. (Optional) Provision PostgreSQL
+
+Fast path: use the provided Compose file.
+
+```bash
+# Start PostgreSQL with Docker Compose
+docker compose -f docker-compose.postgres.yml up -d
+
+# Update .env once the container is live
+DATABASE_URL=postgresql://tgmonitor:your_password@localhost:5432/tgmonitoring
+# Ensure `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are present in `.env` and use strong, unique values.
+```
+
+Manual installation remains supported:
 
 ```bash
 # Install PostgreSQL (Ubuntu/Debian)
 sudo apt install postgresql postgresql-contrib
 
-# Create database and user
+# Create the database and user
 sudo -u postgres psql
 CREATE DATABASE tgmonitoring;
 CREATE USER tgmonitor WITH PASSWORD 'your_password';
 GRANT ALL PRIVILEGES ON DATABASE tgmonitoring TO tgmonitor;
 \q
 
-# Add to .env
+# Record the connection string
 DATABASE_URL=postgresql://tgmonitor:your_password@localhost/tgmonitoring
+# Also set `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` in `.env` to match what you created above.
 ```
 
-The bot will automatically:
-- Create required tables on first run
-- Use PostgreSQL when available, fallback to JSON otherwise
-- Migrate existing JSON data when PostgreSQL is enabled
-
-### 4. Run the Bot
-
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run the bot (modular architecture)
-python -m tgbot.main
-```
+On start-up the bot will:
+- Automatically create the required tables
+- Use PostgreSQL whenever available, otherwise fall back to JSON storage
+- Migrate legacy JSON data into PostgreSQL when you enable it
 
 ## Data Storage
 
@@ -174,8 +200,11 @@ systemctl --user enable --now tg-monitor.service
 
 - `/status` - Get current system metrics
 - `/help` - Show available commands with inline menu
-- `/rss` - RSS feed management (if enabled)
+- `/rss_add <url>` - Subscribe a new RSS feed (per chat)
+- `/rss_rm <url>` - Remove an RSS feed
+- `/rss_ls` - List current RSS feeds and pending items
 - `/qrcode <text>` - Generate a QR code for text or replied message
+- `/kang <optional_suffix>` - Clone the replied sticker into your pack
 - `/version` - Show current tg-monitoring build info
 
 ## Technical Stack
@@ -213,7 +242,7 @@ python3 scripts/migrate_rss_schema.py
 
 ```bash
 # Run compatibility tests
-python test_exporters.py
+python scripts/test_exporters.py
 ```
 
 ### Project Structure
@@ -239,8 +268,8 @@ tgbot/
 - Node Exporter runs on port 9100 by default
 - State persistence in `data/state.json`
 - Legacy entrypoint `python -m monitor.main` redirects to `tgbot.main`
-- Singleton guard via `LOCK_FILE` ensures hanya satu instance bot berjalan
-- `ALLOW_ANY_CHAT=true` membuat bot otomatis melayani grup baru tanpa restart
+- Singleton guard via `LOCK_FILE` ensures only one bot instance can run at a time
+- `ALLOW_ANY_CHAT=true` allows the bot to serve newly discovered chats without a restart
 
 ## Requirements
 
@@ -251,12 +280,16 @@ tgbot/
 ## License
 
 This project is licensed under the GNU General Public License v3.0 or later.
-See the license headers in source files for details.
+See `LICENSE.md` and the license headers in source files for details.
 
 ## Contributors
 
 - Author: Claude (Anthropic AI Assistant)
 - Co-author: goodmeow (Harun Al Rasyid) <aarunalr@pm.me>
+
+## Credits
+
+- QR code generation uses the MIT-licensed [`QR-Code-generator`](https://github.com/nayuki/QR-Code-generator) by Project Nayuki.
 
 ## Changelog
 
