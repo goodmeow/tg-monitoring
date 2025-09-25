@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from tgbot.core.database import DatabaseManager
@@ -192,6 +192,37 @@ class PostgreSQLRssStore:
             logger.error(f"Failed to mark item {item_id} as sent: {e}")
             raise StorageError(f"Failed to mark item {item_id} as sent", {"item_id": item_id}, e)
 
+    async def get_chat_ids(self) -> List[int]:
+        """Return all chat ids that currently have active RSS feeds."""
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            async with self.db_manager.connection() as conn:
+                rows = await conn.fetch(
+                    "SELECT DISTINCT chat_id FROM rss_feeds WHERE is_active = true"
+                )
+                return [row["chat_id"] for row in rows if row["chat_id"] is not None]
+        except Exception as e:
+            logger.error(f"Failed to get RSS chat ids: {e}")
+            raise StorageError("Failed to list RSS chat ids", cause=e)
+
+    async def get_subscribers(self, url: str) -> List[int]:
+        """Return chat ids subscribed to the provided feed URL."""
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            async with self.db_manager.connection() as conn:
+                rows = await conn.fetch(
+                    "SELECT chat_id FROM rss_feeds WHERE url = $1 AND is_active = true",
+                    url,
+                )
+                return [row["chat_id"] for row in rows if row["chat_id"] is not None]
+        except Exception as e:
+            logger.error(f"Failed to get subscribers for {url}: {e}")
+            raise StorageError(f"Failed to get subscribers for {url}", {"url": url}, e)
+
     async def get_last_digest_time(self, chat_id: int | str) -> float:
         """Get last digest timestamp for a chat."""
         if not self.db_manager.is_available:
@@ -287,144 +318,109 @@ class HybridRssStore:
             await self.json_store.set_last_digest(chat_id, timestamp)
 
     async def save(self) -> None:
-        """Save data (compatibility method)."""
+        """Persist data for JSON storage; no-op for PostgreSQL."""
         try:
             if not self.db_manager.is_available:
                 await self.json_store.flush()
-            # For PostgreSQL, no explicit save needed as operations are immediate
-            # Just return successfully
         except Exception as e:
             logger.error(f"Error in save operation: {e}")
-            # Don't raise to avoid breaking the flow
 
-    # Compatibility methods for existing services
-    def all_feeds(self) -> List[str]:
-        """Get all feed URLs across all chats (sync wrapper)."""
-        import asyncio
-        try:
-            if self.db_manager.is_available:
-                loop = asyncio.get_event_loop()
-                feeds_data = loop.run_until_complete(self.pg_store.get_all_feeds())
-                return [feed['url'] for feed in feeds_data]
-            else:
-                return self.json_store.all_feeds()
-        except Exception:
-            return []
+    async def all_feeds(self) -> List[str]:
+        """Return every active feed URL."""
+        if self.db_manager.is_available:
+            feeds = await self.pg_store.get_all_feeds()
+            return [feed["url"] for feed in feeds]
+        return await self.json_store.all_feeds()
 
-    def get_feed_meta(self, url: str) -> Dict[str, Any]:
-        """Get feed metadata (sync wrapper)."""
-        try:
-            if self.db_manager.is_available:
-                # For PostgreSQL, return empty meta as it's handled differently
-                return {"etag": None, "last_modified": None}
-            else:
-                return self.json_store.get_feed_meta(url)
-        except Exception:
-            return {"etag": None, "last_modified": None}
+    async def get_feed_meta(self, url: str) -> Dict[str, Any]:
+        """Fetch feed metadata such as etag/last-modified/seen ids."""
+        if self.db_manager.is_available:
+            # Metadata is tracked via postgres tables; seen_ids handled by rss_items
+            return {"etag": None, "last_modified": None, "seen_ids": []}
+        return await self.json_store.get_feed_meta(url)
 
-    def update_feed_meta(self, url: str, etag: str = None, last_modified: str = None) -> None:
-        """Update feed metadata (sync wrapper)."""
-        import asyncio
-        try:
-            if self.db_manager.is_available:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(self.pg_store.update_feed_metadata(url, None, None))
-            else:
-                self.json_store.update_feed_meta(url, etag, last_modified)
-        except Exception:
-            pass
+    async def update_feed_meta(
+        self,
+        url: str,
+        etag: Optional[str] = None,
+        last_modified: Optional[str] = None,
+    ) -> None:
+        """Persist feed metadata updates."""
+        if self.db_manager.is_available:
+            await self.pg_store.update_feed_metadata(url, None, None)
+        else:
+            await self.json_store.update_feed_meta(url, etag, last_modified)
 
-    @property
-    def data(self) -> Dict[str, Any]:
-        """Compatibility property for direct data access."""
-        try:
-            if self.db_manager.is_available:
-                # For PostgreSQL, we need to construct data structure on-the-fly
-                import asyncio
-                loop = asyncio.get_event_loop()
+    async def get_chat_ids(self) -> List[str]:
+        """Return chat ids that have at least one feed."""
+        if self.db_manager.is_available:
+            ids = await self.pg_store.get_chat_ids()
+            return [str(chat_id) for chat_id in ids]
+        return await self.json_store.list_chat_ids()
 
-                # Get all feeds and group by chat_id
-                feeds_data = loop.run_until_complete(self.pg_store.get_all_feeds())
-                chats = {}
-                for feed in feeds_data:
-                    chat_id = str(feed['chat_id'])
-                    if chat_id not in chats:
-                        chats[chat_id] = {
-                            "feeds": [],
-                            "last_digest_ts": loop.run_until_complete(
-                                self.pg_store.get_last_digest_time(chat_id)
-                            )
-                        }
-                    chats[chat_id]["feeds"].append(feed['url'])
+    async def subscribers(self, url: str) -> List[str]:
+        """Return chat ids subscribed to a URL."""
+        if self.db_manager.is_available:
+            ids = await self.pg_store.get_subscribers(url)
+            return [str(chat_id) for chat_id in ids]
+        return await self.json_store.subscribers(url)
 
-                return {"chats": chats, "feeds_meta": {}, "pending": {}}
-            else:
-                return self.json_store.data
-        except Exception:
-            return {"chats": {}, "feeds_meta": {}, "pending": {}}
+    async def add_pending_item(self, chat_id: int | str, url: str, item: Dict[str, Any]) -> None:
+        """Store a pending item for a chat/feed pair."""
+        if self.db_manager.is_available:
+            guid = item.get("id")
+            if not guid:
+                return
+            pub_ts = item.get("published_ts")
+            pub_dt = (
+                datetime.fromtimestamp(pub_ts, tz=timezone.utc)
+                if isinstance(pub_ts, (int, float)) and pub_ts > 0
+                else None
+            )
+            description = item.get("description") or ""
+            await self.pg_store.add_item(
+                url,
+                guid,
+                item.get("title") or "(no title)",
+                item.get("link") or "",
+                description,
+                pub_dt,
+            )
+        else:
+            await self.json_store.add_pending_item(chat_id, url, item)
 
-    def get_last_digest_sync(self, chat_id: int | str) -> float:
-        """Get last digest timestamp (sync wrapper)."""
-        import asyncio
-        try:
-            if self.db_manager.is_available:
-                loop = asyncio.get_event_loop()
-                return loop.run_until_complete(self.pg_store.get_last_digest_time(chat_id))
-            else:
-                return self.json_store.get_last_digest(chat_id)
-        except Exception:
-            return 0.0
+    async def add_seen_id(self, url: str, item_id: str) -> None:
+        """Track identifiers that have already been processed."""
+        if self.db_manager.is_available:
+            return
+        await self.json_store.add_seen_id(url, item_id)
 
-    def set_last_digest_sync(self, chat_id: int | str, timestamp: float) -> None:
-        """Set last digest timestamp (sync wrapper)."""
-        import asyncio
-        try:
-            if self.db_manager.is_available:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(self.pg_store.set_last_digest_time(chat_id, timestamp))
-            else:
-                self.json_store.set_last_digest_sync(chat_id, timestamp)
-        except Exception:
-            pass
-
-    def pop_pending_digest(self, chat_id: int | str) -> Dict[str, List]:
-        """Pop pending digest items (sync wrapper)."""
-        try:
-            if self.db_manager.is_available:
-                # For PostgreSQL, get and mark items as sent
-                import asyncio
-                loop = asyncio.get_event_loop()
-                items = loop.run_until_complete(self.pg_store.get_unsent_items(chat_id, 50))
-
-                # Mark as sent
-                for item in items:
-                    loop.run_until_complete(self.pg_store.mark_item_sent(item['id']))
-
-                # Group by feed URL
-                result = {}
-                for item in items:
-                    feed_url = item['feed_url']
-                    if feed_url not in result:
-                        result[feed_url] = []
-                    result[feed_url].append({
-                        'title': item['title'],
-                        'link': item['link'],
-                        'description': item['description'],
-                        'pub_date': item['pub_date']
-                    })
-                return result
-            else:
-                return self.json_store.pop_pending_digest(chat_id)
-        except Exception:
-            return {}
-
-    def save(self) -> None:
-        """Save data (compatibility method)."""
-        try:
-            if not self.db_manager.is_available:
-                self.json_store.save()
-        except Exception:
-            pass
+    async def pop_pending_digest(self, chat_id: int | str) -> Dict[str, List[Dict[str, Any]]]:
+        """Collect and clear pending items for a chat."""
+        if self.db_manager.is_available:
+            items = await self.pg_store.get_unsent_items(chat_id, 100)
+            result: Dict[str, List[Dict[str, Any]]] = {}
+            for item in items:
+                feed_url = item["feed_url"]
+                bucket = result.setdefault(feed_url, [])
+                pub_date = item.get("pub_date")
+                ts = 0
+                if isinstance(pub_date, datetime):
+                    ts = int(pub_date.timestamp())
+                bucket.append(
+                    {
+                        "id": item.get("guid"),
+                        "title": item.get("title"),
+                        "link": item.get("link"),
+                        "author": "",
+                        "description": item.get("description"),
+                        "published_ts": ts,
+                    }
+                )
+            for item in items:
+                await self.pg_store.mark_item_sent(item["id"])
+            return result
+        return await self.json_store.pop_pending_digest(chat_id)
 
 
 class AsyncRssStore:
@@ -579,6 +575,12 @@ class AsyncRssStore:
             return list(chat_data.get("feeds", []))
         except Exception as e:
             raise StorageError(f"Failed to list feeds for chat {chat_id}", {"chat_id": chat_id}, e)
+
+    async def list_chat_ids(self) -> List[str]:
+        try:
+            return await self._chats_repo.list_keys()
+        except Exception as e:
+            raise StorageError("Failed to list chat ids", cause=e)
 
     async def all_feeds(self) -> List[str]:
         try:
