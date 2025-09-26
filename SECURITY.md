@@ -1,16 +1,16 @@
 # Security Advisory
 
-## Issue: Hardcoded Database Credentials (Fixed in commit f0eaf62)
+## Issue: Hardcoded Database Credentials (Fixed)
 
 ### Description
-Previous versions of this repository contained hardcoded database credentials in configuration files. This has been resolved in commit `f0eaf62`.
+Previous versions of this repository contained hardcoded database credentials in configuration files. This has been resolved and hardened in commit `7564265` (replace insecure defaults, require explicit secrets via `.env`).
 
 ### Affected Files (Fixed)
-- `.env.example` - Contained example database URL with hardcoded password
-- `docker-compose.postgres.yml` - Contained hardcoded PostgreSQL credentials
+- `.env.example` — Previously included an example password; now emphasises generating unique secrets
+- `docker-compose.postgres.yml` — Previously embedded weak defaults; now mandates values come from `.env`
 
 ### Resolution
-✅ **Fixed**: All hardcoded credentials have been replaced with environment variables using the `${VAR:-default}` pattern.
+✅ **Fixed**: Compose now reads credentials exclusively from `.env` (no fallbacks), and the templates instruct you to create strong unique values.
 
 ### Action Required
 If you cloned this repository before commit `f0eaf62`:
@@ -21,16 +21,15 @@ If you cloned this repository before commit `f0eaf62`:
    ```
 
 2. **Review your environment files**:
-   - Check `.env` file for any hardcoded passwords
-   - Use `.env.docker.example` as template for Docker setup
-   - Generate strong, unique passwords for production
+   - Check `.env` (and `.env.docker` if in use) for any hardcoded passwords
+   - Regenerate strong, unique credentials for `POSTGRES_PASSWORD` (and rotate if reused elsewhere)
 
 3. **For production deployments**:
    ```bash
    # Create secure environment file
-   cp .env.docker.example .env.docker
-   # Edit .env.docker with your secure credentials
-   export POSTGRES_PASSWORD=$(openssl rand -base64 32)
+   cp .env.example .env
+   openssl rand -base64 32 | tr '/+' '_-' | cut -c1-32
+   # Paste the generated secret into POSTGRES_PASSWORD (and update DATABASE_URL accordingly)
    ```
 
 ### Best Practices
