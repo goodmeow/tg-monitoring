@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import html as _html
+import re
 import time as _time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -61,34 +62,71 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
     total = 0
     lines: List[str] = []
     ts_local = datetime.now(tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-    lines.append(f"<b>RSS Digest — {hostname}</b>\n<i>{ts_local}</i>")
+    lines.append(f"<b>📰 RSS Digest — {hostname}</b>")
+    lines.append(f"<i>{ts_local}</i>")
+
+    def _format_meta(author: str, ts_value: int | None) -> str:
+        parts: List[str] = []
+        if author:
+            parts.append(author)
+        if ts_value:
+            try:
+                parts.append(
+                    datetime.fromtimestamp(ts_value, tz=timezone.utc)
+                    .astimezone()
+                    .strftime("%H:%M %Z")
+                )
+            except Exception:
+                pass
+        return " — ".join(parts)
+
+    def _trim_snippet(raw: str) -> str:
+        text = _html.unescape(raw)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = " ".join(text.split())
+        if len(text) > 160:
+            text = text[:157].rstrip() + "…"
+        return text
+
     for url, items in items_by_feed.items():
         if not items:
             continue
         items = sorted(items, key=lambda x: x.get("published_ts", 0))
         cap = min(len(items), cfg.rss_digest_items_per_feed)
-        lines.append(f"\n<b>{_html.escape(url)}</b>")
+
+        escaped_url = _html.escape(url)
+        lines.append("")
+        lines.append(f"<b>🌐 {escaped_url}</b> <i>({len(items)} new)</i>")
+
         for it in items[:cap]:
             title = _html.escape(it.get("title") or "(no title)")
             link = _html.escape(it.get("link") or "")
             author = _html.escape(it.get("author") or "")
-            t = it.get("published_ts")
-            tstr = (
-                datetime.fromtimestamp(t, tz=timezone.utc)
-                .astimezone()
-                .strftime("%H:%M %Z")
-                if t
-                else ""
-            )
-            lines.append(f"• <a href=\"{link}\">{title}</a> — {author} ({tstr})")
+            ts_value = it.get("published_ts")
+            meta = _format_meta(author, ts_value)
+
+            header = f"• <a href=\"{link}\">{title}</a>"
+            if meta:
+                header += f" <i>({meta})</i>"
+            lines.append(header)
+
+            raw_desc = it.get("description") or ""
+            if raw_desc:
+                snippet = _trim_snippet(raw_desc)
+                if snippet:
+                   lines.append(f"   ⤷ {snippet}")
+
             total += 1
             if total >= cfg.rss_digest_max_total:
                 break
+
         more = max(0, len(items) - cap)
         if more:
-            lines.append(f"(+{more} more)")
+            lines.append(f"   ⤷ (+{more} more)")
+
         if total >= cfg.rss_digest_max_total:
             break
+
     if total == 0:
         return "(no new items)"
     return "\n".join(lines)

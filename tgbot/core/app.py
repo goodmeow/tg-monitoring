@@ -19,8 +19,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import contextlib
 import importlib
+import os
+import socket
 from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
@@ -88,6 +90,7 @@ class App:
 
         self.modules = []  # type: List[Any]
         self._tasks: List[asyncio.Task] = []
+        self._startup_notice_task: asyncio.Task | None = None
 
     def _import_symbol(self, path: str):
         mod_name, _, sym = path.partition(":")
@@ -174,17 +177,67 @@ class App:
                     pass
         self.log.info("Modules stopped")
 
+    def _control_chat_target(self) -> Any | None:
+        return self.cfg.control_chat_id or self.cfg.chat_id
+
+    async def _send_control_message(self, text: str, target: Any | None = None) -> None:
+        if target is None:
+            target = self._control_chat_target()
+        if not target:
+            self.log.debug("No control chat configured; skipping control message: %s", text)
+            return
+        try:
+            await self.bot.send_message(
+                target,
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            self.log.warning("Failed to send control message", exc_info=True)
+
+    async def _notify_startup(self) -> None:
+        if not self._control_chat_target():
+            return
+        await asyncio.sleep(1)
+        hostname = socket.gethostname()
+        text = (
+            f"<b>🟢 Bot is back online</b>\n"
+            f"Host: <code>{hostname}</code>\n"
+            f"Version: <code>{self.version}</code>"
+        )
+        await self._send_control_message(text)
+
+    async def _notify_shutdown(self) -> None:
+        target = self._control_chat_target()
+        if not target:
+            return
+        hostname = socket.gethostname()
+        text = (
+            f"<b>🔴 Bot going offline</b>\n"
+            f"Host: <code>{hostname}</code>\n"
+            "Shutdown in <i>about 1 second</i>."
+        )
+        await self._send_control_message(text, target=target)
+        await asyncio.sleep(1)
+
     async def run(self):
         # Initialize database first
         await self.db_manager.initialize()
 
         await self._start_modules()
+        self._startup_notice_task = asyncio.create_task(self._notify_startup())
         try:
             await self.dp.start_polling(
                 self.bot,
                 allowed_updates=["message", "callback_query"],
             )
         finally:
+            if self._startup_notice_task:
+                with contextlib.suppress(Exception):
+                    await self._startup_notice_task
+                self._startup_notice_task = None
+            await self._notify_shutdown()
             await self._stop_modules()
             # Close database connection
             await self.db_manager.close()
