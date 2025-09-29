@@ -12,7 +12,40 @@ venv:
 install: venv
 
 run:
-	. $(VENV)/bin/activate && $(PY) -m tgbot.main
+		@if systemctl --user is-active --quiet tg-monitor.service; then \
+			echo "tg-monitor.service is active; stop it before running make run"; \
+			exit 1; \
+		fi
+		@if [ -f data/tg-monitor.pid ]; then \
+			pid=$$(cat data/tg-monitor.pid 2>/dev/null || true); \
+			if [ -n "$$pid" ] && kill -0 $$pid 2>/dev/null; then \
+				echo "tg-monitoring already running with PID $$pid (lock file data/tg-monitor.pid)"; \
+				exit 1; \
+			else \
+				echo "Removing stale lock file data/tg-monitor.pid"; \
+				rm -f data/tg-monitor.pid; \
+			fi; \
+		fi
+		@if [ -f logs/manual-run.pid ]; then \
+			pid=$$(cat logs/manual-run.pid 2>/dev/null || true); \
+			if [ -n "$$pid" ] && kill -0 $$pid 2>/dev/null; then \
+				echo "Manual run already active with PID $$pid (logs/manual-run.pid)"; \
+				exit 1; \
+			else \
+				rm -f logs/manual-run.pid; \
+			fi; \
+		fi
+		@mkdir -p logs
+		@log_file="logs/manual-run.log"; \
+		 ts=$$(date '+%Y-%m-%d %H:%M:%S'); \
+		 echo "$$ts starting manual bot run (logs -> $$log_file)"; \
+		 (. $(VENV)/bin/activate && { \
+			nohup $(PY) -m tgbot.main >> "$$log_file" 2>&1 </dev/null & \
+			pid=$$!; \
+			echo $$pid > logs/manual-run.pid; \
+			echo "$$ts started manual bot PID $$pid" >> "$$log_file"; \
+			echo "Manual bot PID $$pid"; \
+		 })
 
 status:
 	systemctl --user status tg-monitor.service
@@ -21,10 +54,55 @@ logs:
 	journalctl --user -u tg-monitor.service -f
 
 restart:
-	systemctl --user restart tg-monitor.service
+		$(MAKE) stop
+		systemctl --user enable --now tg-monitor.service
+		@mkdir -p logs
+		@echo "==== $$(date '+%Y-%m-%d %H:%M:%S') make restart ====" >> logs/systemd-restart.log
+		@journalctl --user -u tg-monitor.service --since "1 minute ago" --no-pager >> logs/systemd-restart.log || true
 
 stop:
-	systemctl --user disable --now tg-monitor.service || true
+		@systemctl --user stop tg-monitor.service >/dev/null 2>&1 || true
+	@for i in 1 2 3 4 5; do \
+		if systemctl --user is-active --quiet tg-monitor.service; then \
+			sleep 1; \
+		else \
+			break; \
+		fi; \
+	done
+	@if systemctl --user is-active --quiet tg-monitor.service; then \
+		echo "Forcing tg-monitor.service to terminate"; \
+		systemctl --user kill tg-monitor.service >/dev/null 2>&1 || true; \
+		sleep 1; \
+	fi
+	@if systemctl --user is-active --quiet tg-monitor.service; then \
+		echo "tg-monitor.service is still active"; \
+		exit 1; \
+	fi
+		@if [ -f data/tg-monitor.pid ]; then \
+			pid=$$(cat data/tg-monitor.pid 2>/dev/null || true); \
+			if [ -n "$$pid" ] && kill -0 $$pid 2>/dev/null; then \
+				echo "Killing leftover tg-monitoring process $$pid"; \
+				kill $$pid >/dev/null 2>&1 || true; \
+				for i in 1 2 3; do \
+					kill -0 $$pid 2>/dev/null || break; \
+					sleep 1; \
+				done; \
+			fi; \
+			rm -f data/tg-monitor.pid; \
+		fi
+		@if [ -f logs/manual-run.pid ]; then \
+			pid=$$(cat logs/manual-run.pid 2>/dev/null || true); \
+			if [ -n "$$pid" ] && kill -0 $$pid 2>/dev/null; then \
+				echo "Killing manual-run bot $$pid"; \
+				kill $$pid >/dev/null 2>&1 || true; \
+				for i in 1 2 3; do \
+					kill -0 $$pid 2>/dev/null || break; \
+					sleep 1; \
+				done; \
+			fi; \
+			rm -f logs/manual-run.pid; \
+		fi
+		@systemctl --user disable tg-monitor.service >/dev/null 2>&1 || true
 
 enable:
 	mkdir -p ~/.config/systemd/user

@@ -90,9 +90,27 @@ pip install prometheus-client psutil flask
 # Start the bot via Makefile (virtualenv is activated automatically)
 make run
 
-# Or run manually
+# Follow the detached run logs
+tail -f logs/manual-run.log
+
+# Or run manually (foreground)
 source .venv/bin/activate
 python -m tgbot.main
+```
+
+`make run` now launches the bot in the background, records the PID in `logs/manual-run.pid`,
+and appends output to `logs/manual-run.log`. The target refuses to start if the
+systemd user service is active or another manual run is already alive, preventing
+multiple polling loops on the same token.
+
+Related helpers:
+
+```bash
+# Stop any manual/systemd instance and clean up PID files
+make stop
+
+# Restart the systemd unit (logs appended to logs/systemd-restart.log)
+make restart
 ```
 
 ### 5. (Optional) Provision PostgreSQL
