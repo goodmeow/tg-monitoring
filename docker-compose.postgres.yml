@@ -17,6 +17,7 @@ services:
       - ./.env:/app/.env:ro
     networks:
       - tg-monitoring
+      - monitoring
 
   postgres:
     image: postgres:latest
@@ -50,3 +51,6 @@ volumes:
 networks:
   tg-monitoring:
     driver: bridge
+  monitoring:
+    external: true
+    name: monitoring_monitoring
