@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   tg-monitoring:
     build: .
@@ -38,7 +36,11 @@ services:
     networks:
       - tg-monitoring
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tguser} -d ${POSTGRES_DB:-tg_monitoring}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-tguser} -d ${POSTGRES_DB:-tg_monitoring}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
