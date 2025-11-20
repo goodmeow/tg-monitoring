@@ -1,8 +1,8 @@
 .PHONY: run status logs restart stop
 
-run:
+up:
 	@echo "Starting tg-monitoring stack via Docker Compose"
-	docker compose -f docker-compose.postgres.yml up -d
+	docker-compose -f docker-compose.postgres.yml up -d
 
 status:
 	docker compose -f docker-compose.postgres.yml ps
@@ -11,9 +11,9 @@ logs:
 	docker compose -f docker-compose.postgres.yml logs -f tg-monitoring
 
 restart:
-	$(MAKE) stop
-	$(MAKE) run
+	$(MAKE) down
+	$(MAKE) up
 
-stop:
+down:
 	@echo "Stopping tg-monitoring stack"
-	docker compose -f docker-compose.postgres.yml stop
+	docker-compose -f docker-compose.postgres.yml stop
