@@ -57,6 +57,9 @@ def _valid_url_http_https(url: str) -> bool:
     except Exception:
         return False
 
+TELEGRAM_HTML_HARD_LIMIT = 4096
+TELEGRAM_HTML_CHUNK_LIMIT = 3600
+
 
 def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]], cfg: Config) -> str:
     total = 0
@@ -114,7 +117,7 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
             if raw_desc:
                 snippet = _trim_snippet(raw_desc)
                 if snippet:
-                   lines.append(f"   ⤷ {snippet}")
+                    lines.append(f"   ⤷ {snippet}")
 
             total += 1
             if total >= cfg.rss_digest_max_total:
@@ -130,6 +133,55 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
     if total == 0:
         return "(no new items)"
     return "\n".join(lines)
+
+
+def _split_html_message(payload: str, *, limit: int = TELEGRAM_HTML_CHUNK_LIMIT) -> List[str]:
+    max_limit = TELEGRAM_HTML_HARD_LIMIT - 512  # reserve space for final annotations/markup
+    limit = max(1, min(limit, max_limit))
+    if len(payload) <= limit:
+        return [payload]
+
+    chunks: List[str] = []
+    current_lines: List[str] = []
+    current_len = 0
+
+    for line in payload.split("\n"):
+        additional_len = len(line)
+        if current_lines:
+            additional_len += 1  # newline separator
+        if current_len + additional_len > limit and current_lines:
+            chunks.append("\n".join(current_lines))
+            current_lines = [line]
+            current_len = len(line)
+        elif len(line) > limit:
+            if current_lines:
+                chunks.append("\n".join(current_lines))
+                current_lines = []
+                current_len = 0
+            for start in range(0, len(line), limit):
+                chunks.append(line[start:start + limit])
+            current_lines = []
+            current_len = 0
+        else:
+            current_lines.append(line)
+            current_len += additional_len
+
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+
+    result: List[str] = []
+    for chunk in chunks:
+        if not chunk:
+            continue
+        if len(chunk) > TELEGRAM_HTML_HARD_LIMIT:
+            for start in range(0, len(chunk), TELEGRAM_HTML_HARD_LIMIT - 1):
+                piece = chunk[start:start + TELEGRAM_HTML_HARD_LIMIT - 1]
+                if len(piece) == TELEGRAM_HTML_HARD_LIMIT - 1 and start + TELEGRAM_HTML_HARD_LIMIT - 1 < len(chunk):
+                    piece = piece[:-1] + "…"
+                result.append(piece)
+            continue
+        result.append(chunk)
+    return result
 
 
 @dataclass
@@ -241,14 +293,34 @@ class RssService:
                 feeds = await rss.all_feeds()
                 for url in feeds:
                     meta = await rss.get_feed_meta(url)
-                    try:
-                        parsed = self.client.parse(
-                            url,
-                            etag=meta.get("etag"),
-                            last_modified=meta.get("last_modified"),
-                        )
-                    except Exception:
-                        self.log.warning("feed parse failed: %s", url, exc_info=True)
+                    attempt = 0
+                    backoff_sec = 1
+                    parsed = None
+                    while attempt <= 3 and parsed is None:
+                        try:
+                            parsed = self.client.parse(
+                                url,
+                                etag=meta.get("etag"),
+                                last_modified=meta.get("last_modified"),
+                            )
+                        except Exception as exc:
+                            attempt += 1
+                            if attempt > 3:
+                                self.log.warning(
+                                    "feed parse failed after retries",
+                                    extra={"url": url, "attempts": attempt},
+                                    exc_info=True,
+                                )
+                                break
+                            self.log.warning(
+                                "feed parse error, retrying",
+                                extra={"url": url, "attempt": attempt},
+                                exc_info=True,
+                            )
+                            await asyncio.sleep(backoff_sec)
+                            backoff_sec = min(backoff_sec * 2, 60)
+                            continue
+                    if parsed is None:
                         continue
                     try:
                         etag = getattr(parsed, "etag", None)
@@ -258,8 +330,7 @@ class RssService:
                         modified = getattr(parsed, "modified", None)
                     except Exception:
                         modified = None
-                    if etag or modified:
-                        await rss.update_feed_meta(url, etag, modified)
+                    await rss.update_feed_meta(url, etag, modified)
 
                     entries = list(getattr(parsed, "entries", []) or [])
                     for e in entries:
@@ -320,11 +391,47 @@ class RssService:
                         await rss.save()
                         continue
                     msg = _compose_rss_digest_html(host, pending, cfg)
-                    await bot.send_message(
-                        cid, msg, parse_mode="HTML", disable_web_page_preview=True
-                    )
+                    parts = _split_html_message(msg)
+                    payloads: List[tuple[int, str]] = []
+                    for idx, part in enumerate(parts, start=1):
+                        part_label = f" (Part {idx}/{len(parts)})" if len(parts) > 1 else ""
+                        payload = part + part_label
+                        chunk_len = len(payload)
+                        if chunk_len > TELEGRAM_HTML_HARD_LIMIT:
+                            payload = payload[: TELEGRAM_HTML_HARD_LIMIT - 1] + "…"
+                        payloads.append((idx, payload))
+
+                    for idx, payload in payloads:
+                        chunk_len = len(payload)
+                        self.log.debug(
+                            "Sending RSS digest chunk",
+                            extra={
+                                "chat_id": cid,
+                                "chunk_index": idx,
+                                "chunk_total": len(payloads),
+                                "chunk_length": chunk_len,
+                                "chunk_preview": payload[:120],
+                            },
+                        )
+                        if chunk_len >= TELEGRAM_HTML_HARD_LIMIT:
+                            self.log.warning(
+                                "Digest chunk trimmed to telegram ceiling",
+                                extra={
+                                    "chat_id": cid,
+                                    "chunk_index": idx,
+                                    "chunk_total": len(payloads),
+                                    "chunk_length": chunk_len,
+                                    "chunk_preview": payload[:120],
+                                },
+                            )
+                        await bot.send_message(
+                            cid,
+                            payload,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                        )
                     await rss.set_last_digest(cid, now)
                     await rss.save()
             except Exception:
                 self.log.warning("rss digest iteration failed", exc_info=True)
-            await asyncio.sleep(300)
+            await asyncio.sleep(cfg.rss_digest_interval_sec)
