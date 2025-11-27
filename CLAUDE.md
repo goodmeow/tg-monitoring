@@ -101,6 +101,8 @@ Modules are loaded dynamically via the `MODULES` environment variable (default: 
 Configuration is managed through `tgbot/domain/config.py` with `.env` file support. Key settings:
 - `bot_token`, `chat_id`: Required Telegram credentials
 - `DATABASE_URL`: PostgreSQL connection string (optional, falls back to JSON)
+- Exporter button di menu help hanyalah shortcut untuk melihat status node exporter; ini bukan perintah /export.
+
 - `NODE_EXPORTER_TYPE`: `auto`/`docker`/`python` for metrics collection
 - `MODULES`: Comma-separated list of enabled modules
 - Threshold settings for CPU, memory, disk monitoring

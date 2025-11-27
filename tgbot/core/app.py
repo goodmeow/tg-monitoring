@@ -124,6 +124,14 @@ class App:
                 self.dp.include_router(r)
             for c in (m.tasks(self.ctx) or []):
                 self._tasks.append(asyncio.create_task(c))
+
+        # Add heartbeat logging task
+        async def heartbeat():
+            while True:
+                self.log.info("Bot heartbeat: running")
+                await asyncio.sleep(60)  # Log every minute
+        self._tasks.append(asyncio.create_task(heartbeat()))
+
         self.log.info("Modules started: %s", ", ".join(getattr(m, 'name', 'module') for m in self.modules))
 
         # Set bot commands (menu) for convenience
@@ -228,10 +236,14 @@ class App:
         await self._start_modules()
         self._startup_notice_task = asyncio.create_task(self._notify_startup())
         try:
+            self.log.info("Starting bot polling")
             await self.dp.start_polling(
                 self.bot,
-                allowed_updates=["message", "callback_query"],
+                allowed_updates=["message", "callback_query", "inline_query"],
             )
+        except Exception as e:
+            self.log.error("Polling failed with exception: %s", e, exc_info=True)
+            raise
         finally:
             if self._startup_notice_task:
                 with contextlib.suppress(Exception):

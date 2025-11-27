@@ -32,9 +32,13 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     CallbackQuery,
+    InlineQuery,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
 )
 
 from tgbot.domain.config import Config
+from tgbot.modules.exporters import get_exporter_config
 from tgbot.domain.evaluator import Thresholds, evaluate
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.rss_store import RssStore
@@ -59,6 +63,7 @@ def _help_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Status", callback_data="help:status"),
                 InlineKeyboardButton(text="RSS List", callback_data="help:rss_ls"),
                 InlineKeyboardButton(text="QR Code", callback_data="help:qrcode"),
+                InlineKeyboardButton(text="Exporter", callback_data="help:exporter"),
             ],
             [
                 InlineKeyboardButton(text="Versi", callback_data="help:version"),
@@ -196,5 +201,87 @@ class HelpService:
             if query.message:
                 await query.message.answer(text, parse_mode="HTML")
             await query.answer()
+
+        @router.callback_query(F.data == "help:exporter")
+        async def cb_exporter(query: CallbackQuery):
+            chat_id = query.message.chat.id if query.message else query.from_user.id
+            if not _is_allowed(chat_id, self.cfg):
+                await query.answer()
+                return
+            try:
+                cfg = get_exporter_config()
+                lines = ["<b>Exporter</b>"]
+                env_type = cfg.get("env_type") or "auto"
+                lines.append(f"Mode: <code>{env_type}</code>")
+                avail = cfg.get("available") or []
+                if avail:
+                    lines.append("Available: " + ", ".join(avail))
+                cur = cfg.get("current")
+                if cur:
+                    lines.append(f"Current: <code>{cur.get('type')}</code>")
+                    status = cur.get("status") or {}
+                    running = status.get("running")
+                    metrics_url = status.get("metrics_url")
+                    pid = status.get("pid")
+                    alive = status.get("process_alive")
+                    lines.append(f"Running: <code>{running}</code>")
+                    if metrics_url:
+                        lines.append(f"Metrics: <code>{metrics_url}</code>")
+                    if pid:
+                        lines.append(f"PID: <code>{pid}</code> Alive: <code>{alive}</code>")
+                else:
+                    lines.append("Current: <i>none (managed externally or not started)</i>")
+                if query.message:
+                    await query.message.answer("\n".join(lines), parse_mode="HTML")
+                await query.answer()
+            except Exception:
+                self.log.exception("help:exporter failed")
+                if query.message:
+                    await query.message.answer("Failed to read exporter status")
+                await query.answer()
+
+        @router.inline_query()
+        async def iq_exporter(inline: InlineQuery):
+            if not _is_allowed(inline.from_user.id, self.cfg) and not self.cfg.allow_any_chat:
+                await inline.answer([], cache_time=1)
+                return
+            try:
+                q = (inline.query or "").strip().lower()
+                if "exporter" in q or q == "" or q == "exp":
+                    cfg = get_exporter_config()
+                    lines = ["Exporter"]
+                    env_type = cfg.get("env_type") or "auto"
+                    lines.append(f"Mode: {env_type}")
+                    avail = cfg.get("available") or []
+                    if avail:
+                        lines.append("Available: " + ", ".join(avail))
+                    cur = cfg.get("current")
+                    if cur:
+                        lines.append(f"Current: {cur.get('type')}")
+                        status = cur.get("status") or {}
+                        running = status.get("running")
+                        metrics_url = status.get("metrics_url")
+                        pid = status.get("pid")
+                        alive = status.get("process_alive")
+                        lines.append(f"Running: {running}")
+                        if metrics_url:
+                            lines.append(f"Metrics: {metrics_url}")
+                        if pid:
+                            lines.append(f"PID: {pid} Alive: {alive}")
+                    else:
+                        lines.append("Current: none (managed externally or not started)")
+                    res = [
+                        InlineQueryResultArticle(
+                            id="exporter-status",
+                            title="Exporter Status",
+                            description="Mode, availability, and current exporter",
+                            input_message_content=InputTextMessageContent("\n".join(lines)),
+                        )
+                    ]
+                    await inline.answer(res, cache_time=1)
+                else:
+                    await inline.answer([], cache_time=1)
+            except Exception:
+                await inline.answer([], cache_time=1)
 
         return router
