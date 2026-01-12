@@ -13,6 +13,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
+      - ./logs:/app/logs
     networks:
       - tg-monitoring
       - monitoring

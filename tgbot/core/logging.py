@@ -29,12 +29,33 @@ def setup_logging(level: Optional[str] = None) -> logging.Logger:
     Level can be provided via argument or env `LOG_LEVEL` (default INFO).
     """
     lvl = (level or os.environ.get("LOG_LEVEL") or "INFO").upper()
-    if not logging.getLogger().handlers:
-        logging.basicConfig(
-            level=getattr(logging, lvl, logging.INFO),
-            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        )
-    else:
-        logging.getLogger().setLevel(getattr(logging, lvl, logging.INFO))
+    
+    handlers = [logging.StreamHandler()]
+    
+    # Determine log file path
+    log_file = "logs/tgbot.log"
+    if os.path.exists("/app/logs"):
+        log_file = "/app/logs/tgbot.log"
+    
+    # Ensure directory exists
+    log_dir = os.path.dirname(log_file)
+    if log_dir and not os.path.exists(log_dir):
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except Exception:
+            pass  # Fallback to stream only if cannot create dir
+
+    try:
+        handlers.append(logging.FileHandler(log_file))
+        print(f"Logging to file: {log_file}")
+    except Exception as e:
+        print(f"Failed to setup file logging to {log_file}: {e}")
+
+    logging.basicConfig(
+        level=getattr(logging, lvl, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
     return logging.getLogger("tgbot")
 

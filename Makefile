@@ -1,4 +1,4 @@
-.PHONY: up status logs restart down
+.PHONY: up status logs restart down build
 
 up:
 	@echo "Starting tg-monitoring stack via Docker Compose"
@@ -17,3 +17,7 @@ restart:
 down:
 	@echo "Stopping tg-monitoring stack"
 	docker-compose -f docker-compose.postgres.yml stop
+
+build:
+	@echo "Building tg-monitoring image"
+	docker-compose -f docker-compose.postgres.yml build
