@@ -105,6 +105,7 @@ class Config:
     long_poll_timeout_sec: int = 50
     control_chat_id: Optional[str] = None  # if None, fallback to chat_id
 
+    host_display_name: Optional[str] = None
     lock_file: str = "data/tg-monitor.pid"
     allow_any_chat: bool = False
     extra_allowed_chats: List[str] = None  # allowlist additions
@@ -259,6 +260,7 @@ def load_config() -> Config:
         http_timeout_sec = _get_int(env, "HTTP_TIMEOUT_SEC", 5)
         long_poll_timeout_sec = _get_int(env, "LONG_POLL_TIMEOUT_SEC", 50)
         control_chat_id = _get(env, "CONTROL_CHAT_ID", None)
+        control_host = _get(env, "HOST_DISPLAY_NAME")
         lock_file = _get(env, "LOCK_FILE", "data/tg-monitor.pid")
         allow_any_chat = _get_bool(env, "ALLOW_ANY_CHAT", False)
         extra_allowed_chats = _get_list(env, "ALLOWED_CHATS", [])
@@ -299,6 +301,7 @@ def load_config() -> Config:
             control_chat_id=control_chat_id,
             lock_file=lock_file,
             allow_any_chat=allow_any_chat,
+            host_display_name=control_host,
             extra_allowed_chats=extra_allowed_chats,
             rss_store_file=rss_store_file,
             rss_poll_interval_sec=rss_poll_interval_sec,

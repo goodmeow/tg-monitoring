@@ -192,9 +192,10 @@ class MonitoringService:
                     exclude_fs_types=self.cfg.exclude_fs_types,
                 )
                 results = evaluate(stats, thresholds)
+                host_display = self.cfg.host_display_name or socket.gethostname()
                 await message.answer(
                     _compose_status_message_html(
-                        results, socket.gethostname(), stats.timestamp
+                        results, host_display, stats.timestamp
                     ),
                     disable_web_page_preview=True,
                     parse_mode="HTML",
@@ -216,7 +217,11 @@ class MonitoringService:
             inode_free_pct_warn=cfg.inode_free_pct_warn,
             exclude_fs_types=cfg.exclude_fs_types,
         )
-        host = socket.gethostname()
+        host = self.cfg.host_display_name or socket.gethostname()
+        self.log.debug(
+            "monitor loop resolved hostname",
+            extra={"hostname": host, "override": bool(self.cfg.host_display_name)},
+        )
         while True:
             try:
                 stats = await self.client.fetch_stats()

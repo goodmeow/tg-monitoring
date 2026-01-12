@@ -375,7 +375,7 @@ class RssService:
     async def digest_loop(self, bot):
         cfg = self.cfg
         rss = self.rss
-        host = socket.gethostname()
+        host = self.cfg.host_display_name or socket.gethostname()
         while True:
             try:
                 # Find all chats that have RSS feeds
