@@ -1,4 +1,4 @@
-.PHONY: run status logs restart stop
+.PHONY: up status logs restart down
 
 up:
 	@echo "Starting tg-monitoring stack via Docker Compose"
