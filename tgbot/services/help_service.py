@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -130,9 +129,8 @@ class HelpService:
                     exclude_fs_types=self.cfg.exclude_fs_types,
                 )
                 results = evaluate(stats, thresholds)
-                host_display = self.cfg.host_display_name or socket.gethostname()
                 text = _compose_status_message_html(
-                    results, host_display, stats.timestamp
+                    results, stats, self.cfg.host_display_name
                 )
                 if query.message:
                     await query.message.answer(

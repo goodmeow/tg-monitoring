@@ -32,6 +32,7 @@ from aiogram.types import Message
 
 from tgbot.domain.config import Config
 from tgbot.domain.evaluator import Thresholds, evaluate
+from tgbot.domain.metrics import NodeStats
 import logging
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.state_store_v2 import HybridStateStore
@@ -54,7 +55,12 @@ def _bar(pct: float, width: int = 10) -> str:
 def _decorate_with_bar(entry: Dict) -> str:
     if entry.get("type") == "cpu":
         p = float(entry.get("value") or 0)
-        return f"CPU {p*100:.0f}% {_bar(p)}"
+        load1 = entry.get("load1")
+        cores = entry.get("cores")
+        load_info = ""
+        if load1 is not None and cores:
+            load_info = f" (load1 {load1:.2f}/{cores})"
+        return f"CPU avg {p:.2f} {_bar(p)}{load_info}"
     if entry.get("type") == "mem":
         p = float(entry.get("value") or 0)
         return f"Mem used {p*100:.0f}% {_bar(p)}"
@@ -87,15 +93,70 @@ def _compose_changes_message_html(changes: List[Tuple[str, Dict]], hostname: str
     return "\n".join(lines)
 
 
-def _compose_status_message_html(results: Dict[str, Dict], hostname: str, ts: float) -> str:
-    ts_local = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+def _format_uptime(boot_time: float | None, now: float) -> str | None:
+    """Return uptime string like '3d 04h 12m'."""
+    if not boot_time:
+        return None
+    seconds = max(0, int(now - boot_time))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    if days > 0:
+        return f"{days}d {hours:02d}h {minutes:02d}m"
+    return f"{hours:02d}h {minutes:02d}m"
+
+
+def _filter_disk_mounts(entries: List[Dict]) -> List[Dict]:
+    """Keep one representative mount per device, prioritizing root if present."""
+    if not entries:
+        return []
+    by_device: Dict[str, List[Dict]] = {}
+    for entry in entries:
+        device = entry.get("device") or entry.get("mount") or "unknown"
+        by_device.setdefault(device, []).append(entry)
+
+    chosen: List[Dict] = []
+    for device, mounts in by_device.items():
+        # Prefer root, otherwise shortest mount path
+        root = next((m for m in mounts if m.get("mount") == "/"), None)
+        if root:
+            chosen.append(root)
+            continue
+        mounts_sorted = sorted(mounts, key=lambda m: len(m.get("mount") or ""))
+        chosen.append(mounts_sorted[0])
+
+    # Put root first if present, then others
+    chosen.sort(key=lambda m: 0 if m.get("mount") == "/" else 1)
+    return chosen
+
+
+def _resolve_status_hostname(stats: NodeStats, configured_hostname: str | None = None) -> str:
+    return configured_hostname or stats.hostname or socket.gethostname()
+
+
+def _compose_status_message_html(
+    results: Dict[str, Dict],
+    stats: NodeStats,
+    configured_hostname: str | None = None,
+) -> str:
+    ts_local = datetime.fromtimestamp(stats.timestamp, tz=timezone.utc).astimezone()
     ts_str = ts_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+    hostname = _resolve_status_hostname(stats, configured_hostname)
     lines: List[str] = [f"<b>Server Status — {hostname}</b>", f"<i>{ts_str}</i>"]
+    uptime = _format_uptime(stats.boot_time, stats.timestamp)
+    if uptime:
+        lines.append(f"Uptime: <code>{uptime}</code>")
 
     if "cpu" in results:
         r = results["cpu"]
         emoji = "🔴" if r["status"] == "alert" else "🟢"
-        lines.append(f"\n<b>CPU</b> {emoji}\n{r['message']}")
+        cpu_entry = {
+            "type": "cpu",
+            "value": r.get("value"),
+            "load1": (r.get("meta") or {}).get("load1"),
+            "cores": (r.get("meta") or {}).get("cores"),
+        }
+        lines.append(f"\n<b>CPU</b> {emoji}\n{_decorate_with_bar(cpu_entry)}")
     if "mem" in results:
         r = results["mem"]
         emoji = "🔴" if r["status"] == "alert" else "🟢"
@@ -114,23 +175,11 @@ def _compose_status_message_html(results: Dict[str, Dict], hostname: str, ts: fl
         r = results["disk"]
         emoji = "🔴" if r["status"] == "alert" else "🟢"
         lines.append(f"\n<b>Disk</b> {emoji}")
-        by = (r.get("meta") or {}).get("by_mount") or []
+        by = _filter_disk_mounts((r.get("meta") or {}).get("by_mount") or [])
         if by:
             for it in by:
                 lines.append(
                     f"• {_decorate_with_bar({'type': 'disk', 'value': it.get('value', 0.0), 'mount': it.get('mount', '/')})}"
-                )
-        else:
-            lines.append(r.get("message") or "OK")
-    if "inode" in results:
-        r = results["inode"]
-        emoji = "🔴" if r["status"] == "alert" else "🟢"
-        lines.append(f"\n<b>Inodes</b> {emoji}")
-        by = (r.get("meta") or {}).get("by_mount") or []
-        if by:
-            for it in by:
-                lines.append(
-                    f"• {_decorate_with_bar({'type': 'inode', 'value': it.get('value', 0.0), 'mount': it.get('mount', '/')})}"
                 )
         else:
             lines.append(r.get("message") or "OK")
@@ -192,10 +241,9 @@ class MonitoringService:
                     exclude_fs_types=self.cfg.exclude_fs_types,
                 )
                 results = evaluate(stats, thresholds)
-                host_display = self.cfg.host_display_name or socket.gethostname()
                 await message.answer(
                     _compose_status_message_html(
-                        results, host_display, stats.timestamp
+                        results, stats, self.cfg.host_display_name
                     ),
                     disable_web_page_preview=True,
                     parse_mode="HTML",
