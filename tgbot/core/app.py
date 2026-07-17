@@ -22,7 +22,6 @@ import asyncio
 import contextlib
 import importlib
 import os
-import socket
 from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
@@ -30,6 +29,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand, BotCommandScopeChat
 
 from tgbot.domain.config import Config
+from tgbot.domain.hostname import fetch_host_display_name
 from tgbot.core.logging import setup_logging
 from tgbot.core.middlewares import RequestLogMiddleware
 from tgbot.core.database import DatabaseManager
@@ -271,7 +271,10 @@ class App:
         if not self._control_chat_target():
             return
         await asyncio.sleep(1)
-        hostname = socket.gethostname()
+        hostname = await fetch_host_display_name(
+            self.ctx.clients["node_exporter"],
+            self.cfg.host_display_name,
+        )
         text = (
             f"<b>🟢 Bot is back online</b>\n"
             f"Host: <code>{hostname}</code>\n"
@@ -283,7 +286,10 @@ class App:
         target = self._control_chat_target()
         if not target:
             return
-        hostname = socket.gethostname()
+        hostname = await fetch_host_display_name(
+            self.ctx.clients["node_exporter"],
+            self.cfg.host_display_name,
+        )
         text = (
             f"<b>🔴 Bot going offline</b>\n"
             f"Host: <code>{hostname}</code>\n"

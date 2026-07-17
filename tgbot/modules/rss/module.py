@@ -33,6 +33,7 @@ class Module(BaseModule):
             self.ctx.cfg,
             self.ctx.stores["rss"],
             self.ctx.clients["feed"],
+            self.ctx.clients["node_exporter"],
         )  # type: ignore[attr-defined]
         return [self.service.build_router()]
 

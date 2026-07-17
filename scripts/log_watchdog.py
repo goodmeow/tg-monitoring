@@ -50,6 +50,11 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _host_display_name() -> str:
+    """Return configured host label or OS hostname for watchdog alerts."""
+    return _env_get("HOST_DISPLAY_NAME") or os.uname().nodename
+
+
 @dataclass
 class WatchdogConfig:
     """Configuration for watchdog execution."""
@@ -270,7 +275,8 @@ def main() -> int:
             )
             text = (
                 "tg-monitoring watchdog: no responses sent in the last "
-                f"{cfg.idle_min} minutes. Last response: {last_resp_str}."
+                f"{cfg.idle_min} minutes on {_host_display_name()}. "
+                f"Last response: {last_resp_str}."
             )
             _send_telegram(cfg.token, str(cfg.chat_id), text)
             state["last_alert_ts"] = now

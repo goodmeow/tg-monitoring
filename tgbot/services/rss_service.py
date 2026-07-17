@@ -29,13 +29,14 @@ from urllib.parse import urlparse
 
 import feedparser
 import logging
-import socket
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
 from tgbot.domain.config import Config
+from tgbot.domain.hostname import fetch_host_display_name, resolve_host_display_name
 from tgbot.clients.feed_client import FeedClient
+from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.rss_store_v2 import HybridRssStore
 
 
@@ -189,6 +190,7 @@ class RssService:
     cfg: Config
     rss: HybridRssStore
     client: FeedClient
+    node_client: NodeExporterClient | None = None
     log: logging.Logger = logging.getLogger("tgbot.rss")
 
     def build_router(self) -> Router:
@@ -411,9 +413,16 @@ class RssService:
     async def digest_loop(self, bot):
         cfg = self.cfg
         rss = self.rss
-        host = self.cfg.host_display_name or socket.gethostname()
         while True:
             try:
+                host = (
+                    await fetch_host_display_name(
+                        self.node_client,
+                        self.cfg.host_display_name,
+                    )
+                    if self.node_client
+                    else resolve_host_display_name(self.cfg.host_display_name)
+                )
                 # Find all chats that have RSS feeds
                 chats = await rss.get_chat_ids()
                 now = _time.time()
