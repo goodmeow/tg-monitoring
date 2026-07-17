@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily restart tg-monitoring stack
+After=tg-monitor.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart tg-monitor.service
+ExecStartPost=/usr/bin/systemctl restart tg-monitoring-log.service

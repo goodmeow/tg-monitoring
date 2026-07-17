@@ -23,11 +23,10 @@ Python-based Node Exporter implementation
 
 import asyncio
 import os
-import time
-import subprocess
 import signal
-from typing import Dict, Any, Optional
+import subprocess
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 from ..base import ExporterBase, ExporterType
 
@@ -147,6 +146,6 @@ class PythonExporter(ExporterBase):
     
     def _create_standalone_script(self):
         """Create standalone exporter script"""
-        from .standalone_script import STANDALONE_SCRIPT
+        from .python_node_exporter import STANDALONE_SCRIPT
         self._script_path.write_text(STANDALONE_SCRIPT)
         self._script_path.chmod(0o755)

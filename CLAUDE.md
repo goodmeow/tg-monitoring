@@ -59,23 +59,41 @@ python3 scripts/migrate_rss_schema.py
 
 ### Service Management (systemd)
 ```bash
-# Install and enable as user service
-make enable
+# Install as system service
+sudo cp systemd/tg-monitor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tg-monitor.service
 
 # Check service status
-make status
+sudo systemctl status tg-monitor.service
 
 # View logs
-make logs
+journalctl -u tg-monitor.service -f
 
 # Restart service
-make restart
+sudo systemctl restart tg-monitor.service
 
 # Stop and disable service
-make stop
+sudo systemctl disable --now tg-monitor.service
 ```
 
 ## Architecture Overview
+
+### Hierarchical Agent System
+The application implements a hierarchical agent system for task coordination and delegation:
+
+- **Base Agent (Hierarchy 0)**: Coordinates overall system activities and delegates tasks
+- **System Monitoring Agent**: Handles node_exporter metrics
+- **Notification Agent**: Manages Telegram alerts
+- **Data Storage Agent**: Manages PostgreSQL/JSON storage
+- **RSS Management Agent**: Handles RSS feeds
+- **Exporters Agent**: Manages metrics collection
+
+#### Agent Communication
+- Agents coordinate through shared state and messaging
+- Tasks are delegated from higher hierarchy agents to lower ones
+- Status reporting flows upward through the hierarchy
+- Each directory has its own `AGENTS.md` file with specific guidance
 
 ### Modular Design
 The bot uses a modular architecture centered around `tgbot/core/app.py`:
@@ -103,7 +121,7 @@ Configuration is managed through `tgbot/domain/config.py` with `.env` file suppo
 - `DATABASE_URL`: PostgreSQL connection string (optional, falls back to JSON)
 - Exporter button di menu help hanyalah shortcut untuk melihat status node exporter; ini bukan perintah /export.
 
-- `NODE_EXPORTER_TYPE`: `auto`/`docker`/`python` for metrics collection
+- `NODE_EXPORTER_TYPE`: `auto`/`docker`/`python` for metrics collection (Docker recommended for host disks)
 - `MODULES`: Comma-separated list of enabled modules
 - Threshold settings for CPU, memory, disk monitoring
 
@@ -132,6 +150,13 @@ The exporters module provides flexible metrics collection:
 2. Implement base contract: `routers()`, `tasks()`, optional hooks
 3. Add to `MODULES` env variable or use full module path
 
+### Agent Development
+1. Follow the hierarchical agent pattern described in `AGENTS.md`
+2. Define agent responsibilities and communication protocols
+3. Implement task delegation and status reporting mechanisms
+4. Create an `AGENTS.md` file in your module's directory with specific guidance
+5. Integrate with the existing agent coordination system
+
 ### Testing
 Use the scripts in `scripts/` directory for component testing:
 - `test_exporters.py`: Validates exporter compatibility
@@ -156,6 +181,7 @@ Core dependencies are minimal and focused:
 - **Security**: All hardcoded credentials removed, environment variable configuration
 - **Documentation**: Comprehensive README, security advisory, and migration guides
 - **Testing**: Database migration scripts and functional tests
+- **Agent System**: Hierarchical agent system for task coordination and delegation
 
 ### Production Ready ✅
 - **Memory Efficiency**: Optimized with repository pattern and LRU caching
@@ -189,3 +215,10 @@ Core dependencies are minimal and focused:
 - **Router patterns**: Use aiogram Router for command handling
 - **Service layer**: Separate business logic into services
 - **Configuration**: Use the centralized config system for settings
+
+### Agent Development
+- **Hierarchical structure**: Follow the 0-AGENTS.md (base), 1-*.md (sub-agents), 2-*.md (sub-sub-agents) pattern
+- **Communication**: Implement proper state sharing and messaging between agents
+- **Delegation**: Design clear task delegation mechanisms from higher to lower hierarchy agents
+- **Documentation**: Create `AGENTS.md` files in each relevant directory with specific guidance
+- **Security**: Ensure agent communications follow secure protocols

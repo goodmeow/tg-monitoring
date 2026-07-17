@@ -7,7 +7,7 @@ Previous versions of this repository contained hardcoded database credentials in
 
 ### Affected Files (Fixed)
 - `.env.example` — Previously included an example password; now emphasises generating unique secrets
-- `docker-compose.postgres.yml` — Previously embedded weak defaults; now mandates values come from `.env`
+- `docker-compose.yml` — Previously embedded weak defaults; now mandates values come from `.env`
 
 ### Resolution
 ✅ **Fixed**: Compose now reads credentials exclusively from `.env` (no fallbacks), and the templates instruct you to create strong unique values.

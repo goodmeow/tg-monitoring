@@ -1,23 +1,32 @@
-.PHONY: up status logs restart down build
+.PHONY: up status logs restart down build daily-restart full-stop
 
 up:
-	@echo "Starting tg-monitoring stack via Docker Compose"
-	docker-compose -f docker-compose.postgres.yml up -d
+	@echo "Starting tg-monitoring via systemd"
+	sudo systemctl enable --now tg-monitor.service
 
 status:
-	docker compose -f docker-compose.postgres.yml ps
+	sudo systemctl status tg-monitor.service
 
 logs:
-	docker compose -f docker-compose.postgres.yml logs -f tg-monitoring
+	journalctl -u tg-monitor.service -f
 
 restart:
-	$(MAKE) down
-	$(MAKE) up
+	sudo systemctl restart tg-monitor.service
+
+daily-restart:
+	@echo "Performing daily restart of tg-monitoring via systemd"
+	sudo systemctl restart tg-monitor.service
 
 down:
-	@echo "Stopping tg-monitoring stack"
-	docker-compose -f docker-compose.postgres.yml stop
+	@echo "Stopping tg-monitoring via systemd"
+	sudo systemctl stop tg-monitor.service
+
+full-stop:
+	@echo "Stopping tg-monitoring and disabling watchdog"
+	sudo systemctl stop tg-monitoring-watchdog.timer tg-monitoring-watchdog.service
+	sudo systemctl disable tg-monitoring-watchdog.timer
+	sudo systemctl stop tg-monitor.service
 
 build:
 	@echo "Building tg-monitoring image"
-	docker-compose -f docker-compose.postgres.yml build
+	docker compose -f docker-compose.yml build

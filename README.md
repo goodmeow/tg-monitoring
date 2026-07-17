@@ -209,9 +209,20 @@ The provided unit hardcodes `/home/ubuntu/tg-monitoring` and `User=ubuntu` /
 `Group=ubuntu`; edit `systemd/tg-monitor.service` before installing it if your
 path, user, or group differ.
 
+Related units in `systemd/`:
+
+- `tg-monitoring-log.service`: follows container logs into `logs/tg-monitoring.log`.
+- `tg-monitoring-watchdog.timer`: runs the log watchdog every minute.
+- `tg-monitoring-daily.timer`: restarts the stack daily at 02:00.
+
 ## Daily Restart
 
-Optional cron entry:
+Preferred path: enable `tg-monitoring-daily.timer`. Cron is only an optional
+fallback for hosts that do not use the bundled systemd timer.
+The daily restart is a defensive workaround for the current unknown hang/dead
+state failure mode. Keep `tg-monitoring-watchdog.timer` enabled as well so the
+next incident leaves request/response/heartbeat evidence for root-cause analysis
+instead of only relying on scheduled restarts.
 
 ```cron
 0 2 * * * /home/ubuntu/tg-monitoring/scripts/daily_restart.sh
@@ -224,8 +235,7 @@ crontab -e
 ```
 
 `make daily-restart` restarts `tg-monitor.service`.
-Cron must be able to run `sudo systemctl` non-interactively, and the `logs/`
-directory must exist for the daily restart script.
+Cron must be able to run `sudo systemctl` non-interactively.
 
 ## Development
 

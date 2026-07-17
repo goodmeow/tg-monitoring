@@ -29,13 +29,14 @@ from urllib.parse import urlparse
 
 import feedparser
 import logging
-import socket
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
 from tgbot.domain.config import Config
+from tgbot.domain.hostname import fetch_host_display_name, resolve_host_display_name
 from tgbot.clients.feed_client import FeedClient
+from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.rss_store_v2 import HybridRssStore
 
 
@@ -189,44 +190,81 @@ class RssService:
     cfg: Config
     rss: HybridRssStore
     client: FeedClient
+    node_client: NodeExporterClient | None = None
     log: logging.Logger = logging.getLogger("tgbot.rss")
 
     def build_router(self) -> Router:
         router = Router()
 
+        def _extract_urls(text: str) -> List[str]:
+            """Extract http/https URLs from free-form text."""
+            raw = re.findall(r"https?://\S+", text)
+            cleaned: List[str] = []
+            for url in raw:
+                cleaned.append(url.rstrip(").,]>}\"'"))
+            if cleaned:
+                return cleaned
+            # Fallback: parse per-line in case formatting hides URLs from regex
+            candidates: List[str] = []
+            for line in text.splitlines():
+                line = line.strip().lstrip("•-*").strip()
+                if not line:
+                    continue
+                candidates.append(line)
+            return candidates
+
         @router.message(Command("rss_add"))
         async def rss_add(message: Message):
             if not _is_allowed(message.chat.id, self.cfg):
                 return
-            parts = (message.text or "").split(maxsplit=1)
+            text = message.text or ""
+            parts = text.split(maxsplit=1)
             if len(parts) < 2:
-                await message.answer("Usage: /rss_add <url>")
+                await message.answer("Usage: /rss_add <url> (or multiple URLs, one per line)")
                 return
-            url = parts[1].strip()
-            if len(url) > 2000 or not _valid_url_http_https(url):
-                await message.answer("Invalid URL (only http/https)")
+            raw_payload = parts[1].strip()
+            urls = _extract_urls(raw_payload)
+            if not urls:
+                await message.answer("Invalid URL (only http/https). Example:\n/rss_add https://example.com/feed")
                 return
 
             try:
-                # Check if feed already exists for this chat
-                existing_feeds = await self.rss.get_feeds(message.chat.id)
-                if url in existing_feeds:
-                    await message.answer(f"Feed already subscribed:\n{_html.escape(url)}")
-                    return
+                existing_feeds = set(await self.rss.get_feeds(message.chat.id))
+                added: List[str] = []
+                skipped: List[str] = []
+                invalid: List[str] = []
+                failed: List[str] = []
 
-                # Add the feed
-                await self.rss.add_feed(message.chat.id, url)
-                # Note: PostgreSQL operations auto-commit, JSON fallback handled in store
+                for url in urls:
+                    if len(url) > 2000 or not _valid_url_http_https(url):
+                        invalid.append(url)
+                        continue
+                    if url in existing_feeds or url in added:
+                        skipped.append(url)
+                        continue
+                    try:
+                        await self.rss.add_feed(message.chat.id, url)
+                        added.append(url)
+                    except Exception:
+                        failed.append(url)
 
-                # Get updated feed count
                 updated_feeds = await self.rss.get_feeds(message.chat.id)
-                await message.answer(
-                    f"✅ Subscribed to feed:\n{_html.escape(url)}\n\n"
-                    f"Total feeds: {len(updated_feeds)}"
-                )
+                lines = [f"✅ Added: {len(added)}", f"Total feeds: {len(updated_feeds)}"]
+                if skipped:
+                    lines.append(f"Skipped (already): {len(skipped)}")
+                if invalid:
+                    lines.append(f"Invalid: {len(invalid)}")
+                if failed:
+                    lines.append(f"Failed: {len(failed)}")
+                if added:
+                    lines.append("")
+                    lines.append("Added feeds:")
+                    for url in added:
+                        lines.append(f"• {_html.escape(url)}")
+                await message.answer("\n".join(lines))
             except Exception as e:
-                self.log.error(f"Failed to add RSS feed {url}: {e}")
-                await message.answer(f"❌ Failed to add feed. Please try again.")
+                self.log.error(f"Failed to add RSS feeds: {e}")
+                await message.answer("❌ Failed to add feed(s). Please try again.")
 
         @router.message(Command("rss_rm"))
         async def rss_rm(message: Message):
@@ -375,9 +413,16 @@ class RssService:
     async def digest_loop(self, bot):
         cfg = self.cfg
         rss = self.rss
-        host = self.cfg.host_display_name or socket.gethostname()
         while True:
             try:
+                host = (
+                    await fetch_host_display_name(
+                        self.node_client,
+                        self.cfg.host_display_name,
+                    )
+                    if self.node_client
+                    else resolve_host_display_name(self.cfg.host_display_name)
+                )
                 # Find all chats that have RSS feeds
                 chats = await rss.get_chat_ids()
                 now = _time.time()

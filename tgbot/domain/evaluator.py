@@ -38,6 +38,10 @@ def _fmt_pct(x: float) -> str:
     return f"{x*100:.0f}%"
 
 
+def _fmt_float(x: float) -> str:
+    return f"{x:.2f}"
+
+
 def evaluate(stats: NodeStats, t: Thresholds) -> Dict[str, Dict]:
     out: Dict[str, Dict] = {}
 
@@ -62,8 +66,14 @@ def evaluate(stats: NodeStats, t: Thresholds) -> Dict[str, Dict]:
         "type": "cpu",
         "status": "alert" if cpu >= t.cpu_load_per_core_warn else "ok",
         "value": cpu,
-        "message": f"Load1 per core: {_fmt_pct(cpu)} (warn {_fmt_pct(t.cpu_load_per_core_warn)})",
-        "meta": {},
+        "message": (
+            f"Load1 per core: {_fmt_float(cpu)} "
+            f"(warn >= {_fmt_float(t.cpu_load_per_core_warn)})"
+        ),
+        "meta": {
+            "load1": stats.cpu_load1,
+            "cores": stats.cpu_cores,
+        },
     }
 
     # Memory
@@ -90,10 +100,11 @@ def evaluate(stats: NodeStats, t: Thresholds) -> Dict[str, Dict]:
             continue
         used_fraction = 1.0 - (fs.avail_bytes / fs.size_bytes) if fs.size_bytes > 0 else 0.0
         # Always include bar data for visibility
-        disk_meta["by_mount"].append({"mount": fs.mount, "value": used_fraction})
+        disk_meta["by_mount"].append(
+            {"mount": fs.mount, "value": used_fraction, "device": fs.device}
+        )
         if used_fraction >= t.disk_usage_pct_warn:
             alerts.append(f"{fs.mount} used {_fmt_pct(used_fraction)} (warn {_fmt_pct(t.disk_usage_pct_warn)})")
-            disk_meta["by_mount"].append({"mount": fs.mount, "value": used_fraction})
     out["disk"] = {
         "type": "disk",
         "status": "alert" if alerts else "ok",

@@ -22,7 +22,6 @@ import asyncio
 import contextlib
 import importlib
 import os
-import socket
 from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
@@ -30,7 +29,9 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand, BotCommandScopeChat
 
 from tgbot.domain.config import Config
+from tgbot.domain.hostname import fetch_host_display_name
 from tgbot.core.logging import setup_logging
+from tgbot.core.middlewares import RequestLogMiddleware
 from tgbot.core.database import DatabaseManager
 from tgbot.version import get_version
 from tgbot.stores.state_store import StateStore
@@ -39,6 +40,8 @@ from tgbot.stores.state_store_v2 import HybridStateStore
 from tgbot.stores.rss_store_v2 import HybridRssStore
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.clients.feed_client import FeedClient
+from tgbot.modules.exporters import create_exporter
+from tgbot.modules.exporters.base import ExporterBase
 
 
 @dataclass
@@ -60,6 +63,8 @@ class App:
         self.log.info("tg-monitoring version: %s", self.version)
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
+        self._wrap_bot_methods()
+        self._register_middlewares()
 
         # Initialize database manager
         self.db_manager = DatabaseManager(cfg)
@@ -91,6 +96,40 @@ class App:
         self.modules = []  # type: List[Any]
         self._tasks: List[asyncio.Task] = []
         self._startup_notice_task: asyncio.Task | None = None
+        self._exporter: ExporterBase | None = None
+
+    def _wrap_bot_methods(self) -> None:
+        def _wrap(name: str):
+            original = getattr(self.bot, name, None)
+            if not original:
+                return
+
+            async def _wrapped(*args, **kwargs):
+                result = await original(*args, **kwargs)
+                try:
+                    chat_id = None
+                    if args:
+                        chat_id = args[0]
+                    chat_id = kwargs.get("chat_id", chat_id)
+                    self.log.info(
+                        "response_sent method=%s chat_id=%s",
+                        name,
+                        chat_id,
+                    )
+                except Exception:
+                    self.log.debug("response log failed", exc_info=True)
+                return result
+
+            setattr(self.bot, name, _wrapped)
+
+        for method in ("send_message", "edit_message_text", "answer_callback_query"):
+            _wrap(method)
+
+    def _register_middlewares(self) -> None:
+        mw = RequestLogMiddleware(self.log)
+        self.dp.message.middleware(mw)
+        self.dp.callback_query.middleware(mw)
+        self.dp.inline_query.middleware(mw)
 
     def _import_symbol(self, path: str):
         mod_name, _, sym = path.partition(":")
@@ -163,6 +202,30 @@ class App:
         except Exception:
             self.log.warning("set_my_commands failed", exc_info=True)
 
+    async def _maybe_start_exporter(self) -> None:
+        env_type = os.environ.get("NODE_EXPORTER_TYPE", "").lower().strip()
+        if env_type not in {"python", "docker"}:
+            return
+        try:
+            self._exporter = create_exporter()
+            started = await self._exporter.start()
+            if started:
+                self.log.info("Exporter started: %s", self._exporter.exporter_type.value)
+            else:
+                self.log.warning("Exporter failed to start: %s", self._exporter.exporter_type.value)
+        except Exception:
+            self.log.exception("Failed to start exporter")
+
+    async def _stop_exporter(self) -> None:
+        if not self._exporter:
+            return
+        try:
+            await self._exporter.stop()
+        except Exception:
+            self.log.exception("Failed to stop exporter")
+        finally:
+            self._exporter = None
+
     async def _stop_modules(self):
         # Cancel background tasks
         for t in self._tasks:
@@ -208,7 +271,10 @@ class App:
         if not self._control_chat_target():
             return
         await asyncio.sleep(1)
-        hostname = socket.gethostname()
+        hostname = await fetch_host_display_name(
+            self.ctx.clients["node_exporter"],
+            self.cfg.host_display_name,
+        )
         text = (
             f"<b>🟢 Bot is back online</b>\n"
             f"Host: <code>{hostname}</code>\n"
@@ -220,7 +286,10 @@ class App:
         target = self._control_chat_target()
         if not target:
             return
-        hostname = socket.gethostname()
+        hostname = await fetch_host_display_name(
+            self.ctx.clients["node_exporter"],
+            self.cfg.host_display_name,
+        )
         text = (
             f"<b>🔴 Bot going offline</b>\n"
             f"Host: <code>{hostname}</code>\n"
@@ -233,6 +302,7 @@ class App:
         # Initialize database first
         await self.db_manager.initialize()
 
+        await self._maybe_start_exporter()
         await self._start_modules()
         self._startup_notice_task = asyncio.create_task(self._notify_startup())
         try:
@@ -251,5 +321,6 @@ class App:
                 self._startup_notice_task = None
             await self._notify_shutdown()
             await self._stop_modules()
+            await self._stop_exporter()
             # Close database connection
             await self.db_manager.close()

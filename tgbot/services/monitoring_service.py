@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -32,6 +31,7 @@ from aiogram.types import Message
 
 from tgbot.domain.config import Config
 from tgbot.domain.evaluator import Thresholds, evaluate
+from tgbot.domain.hostname import resolve_host_display_name
 from tgbot.domain.metrics import NodeStats
 import logging
 from tgbot.clients.node_exporter import NodeExporterClient
@@ -131,7 +131,7 @@ def _filter_disk_mounts(entries: List[Dict]) -> List[Dict]:
 
 
 def _resolve_status_hostname(stats: NodeStats, configured_hostname: str | None = None) -> str:
-    return configured_hostname or stats.hostname or socket.gethostname()
+    return resolve_host_display_name(configured_hostname, stats)
 
 
 def _compose_status_message_html(
@@ -265,15 +265,11 @@ class MonitoringService:
             inode_free_pct_warn=cfg.inode_free_pct_warn,
             exclude_fs_types=cfg.exclude_fs_types,
         )
-        host = self.cfg.host_display_name or socket.gethostname()
-        self.log.debug(
-            "monitor loop resolved hostname",
-            extra={"hostname": host, "override": bool(self.cfg.host_display_name)},
-        )
         while True:
             try:
                 stats = await self.client.fetch_stats()
                 results = evaluate(stats, thresholds)
+                host = resolve_host_display_name(self.cfg.host_display_name, stats)
 
                 changes: List[Tuple[str, Dict]] = []
                 for key, cur in results.items():
