@@ -132,15 +132,29 @@ class PostgreSQLRssStore:
             logger.error(f"Failed to update feed metadata for {url}: {e}")
             raise StorageError(f"Failed to update feed metadata for {url}", {"url": url}, e)
 
-    async def add_item(self, feed_url: str, guid: str, title: str, link: str, description: str, pub_date: Optional[datetime] = None) -> bool:
+    async def add_item(
+        self,
+        chat_id: int | str,
+        feed_url: str,
+        guid: str,
+        title: str,
+        link: str,
+        description: str,
+        pub_date: Optional[datetime] = None,
+    ) -> bool:
         """Add RSS item if not already exists."""
         if not self.db_manager.is_available:
             raise StorageError("Database not available")
 
         try:
+            chat_id_int = int(chat_id)
             async with self.db_manager.connection() as conn:
                 # Get feed_id
-                feed_row = await conn.fetchrow("SELECT id FROM rss_feeds WHERE url = $1", feed_url)
+                feed_row = await conn.fetchrow(
+                    "SELECT id FROM rss_feeds WHERE url = $1 AND chat_id = $2",
+                    feed_url,
+                    chat_id_int,
+                )
                 if not feed_row:
                     return False
 
@@ -156,7 +170,11 @@ class PostgreSQLRssStore:
                 return int(result.split()[-1]) > 0
         except Exception as e:
             logger.error(f"Failed to add item {guid} for feed {feed_url}: {e}")
-            raise StorageError(f"Failed to add item {guid} for feed {feed_url}", {"feed_url": feed_url, "guid": guid}, e)
+            raise StorageError(
+                f"Failed to add item {guid} for feed {feed_url}",
+                {"chat_id": chat_id, "feed_url": feed_url, "guid": guid},
+                e,
+            )
 
     async def get_unsent_items(self, chat_id: int | str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get unsent items for a chat."""
@@ -329,7 +347,7 @@ class HybridRssStore:
         """Return every active feed URL."""
         if self.db_manager.is_available:
             feeds = await self.pg_store.get_all_feeds()
-            return [feed["url"] for feed in feeds]
+            return list(dict.fromkeys(feed["url"] for feed in feeds))
         return await self.json_store.all_feeds()
 
     async def get_feed_meta(self, url: str) -> Dict[str, Any]:
@@ -379,6 +397,7 @@ class HybridRssStore:
             )
             description = item.get("description") or ""
             await self.pg_store.add_item(
+                chat_id,
                 url,
                 guid,
                 item.get("title") or "(no title)",

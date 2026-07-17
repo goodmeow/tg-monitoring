@@ -14,6 +14,7 @@
 - Enhanced RSS service with per-chat feed management
 - Flexible metrics collection via Docker or Native Python exporters
 - Modular architecture with support for additional features
+- Hierarchical agent system for task coordination and delegation
 
 ### Architecture
 
@@ -31,6 +32,23 @@ The application follows a modular architecture:
 - **Stores**: Data persistence (`StateStore`, `RssStore`) with hybrid PostgreSQL/JSON support
 - **Clients**: External service interfaces (`NodeExporterClient`, `FeedClient`)
 - **Domain**: Configuration and domain models in `tgbot/domain/`
+- **Agents**: Hierarchical agent system for task coordination (see `AGENTS.md`)
+
+## Agent System Integration
+
+The project implements a hierarchical agent system as described in `AGENTS.md`:
+
+- **Base Agent (Hierarchy 0)**: Coordinates overall system activities and delegates tasks
+- **System Monitoring Agent**: Handles node_exporter metrics
+- **Notification Agent**: Manages Telegram alerts
+- **Data Storage Agent**: Manages PostgreSQL/JSON storage
+- **RSS Management Agent**: Handles RSS feeds
+- **Exporters Agent**: Manages metrics collection
+
+### Agent Communication
+- Agents coordinate through shared state and messaging
+- Tasks are delegated from higher hierarchy agents to lower ones
+- Status reporting flows upward through the hierarchy
 
 ## Technical Stack
 
@@ -41,6 +59,7 @@ The application follows a modular architecture:
 - **System Metrics**: psutil (for Python exporter)
 - **Database**: PostgreSQL with asyncpg (optional, fallback to JSON)
 - **Storage**: Hybrid PostgreSQL/JSON with automatic fallback
+- **Agent Coordination**: Hierarchical agent system with task delegation
 - **License**: GPL v3
 
 ## Configuration
@@ -52,7 +71,7 @@ Configuration is managed through environment variables in `.env` file:
 - `chat_id`: Telegram group or channel ID for alerts
 
 ### Optional Variables
-- `NODE_EXPORTER_URL`: Metrics endpoint (default: `http://127.0.0.1:9100/metrics`)
+- `NODE_EXPORTER_URL`: Metrics endpoint (default: `http://host.docker.internal:9100/metrics`)
 - `NODE_EXPORTER_TYPE`: `auto`/`docker`/`python` for metrics collection (default: `auto`)
 - `DATABASE_URL`: PostgreSQL connection string (optional)
 - `SAMPLE_INTERVAL_SEC`: Sampling interval (default: 15)
@@ -125,7 +144,7 @@ docker build -t tg-monitoring .
 docker run -d --env-file .env tg-monitoring
 
 # Or with Docker Compose (with PostgreSQL)
-docker-compose -f docker-compose.postgres.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 ### Systemd Service
@@ -133,10 +152,10 @@ docker-compose -f docker-compose.postgres.yml up -d
 The project includes systemd service files for running as a system service:
 
 ```bash
-# Install as user service
-cp systemd/tg-monitor.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now tg-monitor.service
+# Install as system service
+sudo cp systemd/tg-monitor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tg-monitor.service
 ```
 
 ## Database Schema
@@ -157,6 +176,12 @@ The application supports hybrid storage with PostgreSQL as the primary and JSON 
 2. Implement base contract: `routers()`, `tasks()`, optional hooks
 3. Add to `MODULES` environment variable
 
+### Agent Development
+1. Follow the hierarchical agent pattern described in `AGENTS.md`
+2. Define agent responsibilities and communication protocols
+3. Implement task delegation and status reporting mechanisms
+4. Integrate with the existing agent coordination system
+
 ### Testing
 Use the scripts in `scripts/` directory for component testing:
 - `test_exporters.py`: Validates exporter compatibility
@@ -170,9 +195,11 @@ Use the scripts in `scripts/` directory for component testing:
 - Singleton guard via `LOCK_FILE` ensures only one bot instance runs
 - `ALLOW_ANY_CHAT=true` allows the bot to serve newly discovered chats
 - The modular architecture allows for extending functionality
+- The agent system enables scalable task coordination and delegation
 
 ## Security
 - Credentials must be configured via environment variables
 - No hardcoded credentials (as of commit f0eaf62)
 - Use strong, randomly generated database passwords
 - `.env` files should never be committed with real credentials
+- Agent communications should follow secure protocols

@@ -1,21 +1,21 @@
 [Unit]
-Description=Telegram Server Monitor (Node Exporter -> Telegram)
-After=network-online.target
-Wants=network-online.target
+Description=Telegram Server Monitor (Docker-based)
+After=docker.service network-online.target
+Wants=docker.service network-online.target
 
 [Service]
-Type=simple
-WorkingDirectory=%h/tg-monitoring
-EnvironmentFile=%h/tg-monitoring/.env
-# Default: use new modular entrypoint (tgbot.main)
-ExecStart=%h/tg-monitoring/.venv/bin/python -m tgbot.main
-# Legacy fallback: ExecStart=%h/tg-monitoring/.venv/bin/python -m monitor.main
-Restart=always
-RestartSec=5s
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
-ProtectHome=false
+Type=oneshot
+RemainAfterExit=yes
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/tg-monitoring
+EnvironmentFile=/home/ubuntu/tg-monitoring/.env
+ExecStartPre=/bin/sh -c "/usr/bin/docker network inspect tg-monitoring_net >/dev/null 2>&1 || /usr/bin/docker network create tg-monitoring_net"
+ExecStart=/usr/bin/docker compose -f /home/ubuntu/tg-monitoring/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /home/ubuntu/tg-monitoring/docker-compose.yml down
+ExecReload=/usr/bin/docker compose -f /home/ubuntu/tg-monitoring/docker-compose.yml restart tg-monitoring
+Restart=on-failure
+RestartSec=10s
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

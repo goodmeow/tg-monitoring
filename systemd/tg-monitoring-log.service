@@ -1,0 +1,16 @@
+[Unit]
+Description=Capture tg-monitoring container logs to file
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/mkdir -p /home/ubuntu/tg-monitoring/logs
+ExecStart=/usr/bin/docker logs --timestamps --follow tg-monitoring
+Restart=always
+RestartSec=5s
+StandardOutput=append:/home/ubuntu/tg-monitoring/logs/tg-monitoring.log
+StandardError=append:/home/ubuntu/tg-monitoring/logs/tg-monitoring.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily restart for tg-monitoring
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -19,6 +19,7 @@ NODE_EXPORTER_TYPE=auto
 
 # Force Docker exporter
 NODE_EXPORTER_TYPE=docker  
+NODE_EXPORTER_URL=http://host.docker.internal:9100/metrics
 
 # Force Python exporter
 NODE_EXPORTER_TYPE=python
@@ -90,8 +91,7 @@ exporters/
 └── python/
     ├── __init__.py
     ├── exporter.py    # Python implementation
-    ├── standalone_script.py  # Script template
-    └── metrics_collector.py  # Metrics utilities
+    └── python_node_exporter.py  # Script template
 ```
 
 ## Docker Exporter
