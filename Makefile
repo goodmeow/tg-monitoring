@@ -1,33 +1,23 @@
-VENV=.venv
-PY=$(VENV)/bin/python
-PIP=$(VENV)/bin/pip
+.PHONY: up status logs restart down build
 
-.PHONY: venv install run status logs restart stop enable disable fmt
-
-venv:
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements.txt
-
-install: venv
-
-run:
-	. $(VENV)/bin/activate && $(PY) -m tgbot.main
+up:
+	@echo "Starting tg-monitoring stack via Docker Compose"
+	docker-compose -f docker-compose.postgres.yml up -d
 
 status:
-	systemctl --user status tg-monitor.service
+	docker compose -f docker-compose.postgres.yml ps
 
 logs:
-	journalctl --user -u tg-monitor.service -f
+	docker compose -f docker-compose.postgres.yml logs -f tg-monitoring
 
 restart:
-	systemctl --user restart tg-monitor.service
+	$(MAKE) down
+	$(MAKE) up
 
-stop:
-	systemctl --user disable --now tg-monitor.service || true
+down:
+	@echo "Stopping tg-monitoring stack"
+	docker-compose -f docker-compose.postgres.yml stop
 
-enable:
-	mkdir -p ~/.config/systemd/user
-	install -m 0644 systemd/tg-monitor.service ~/.config/systemd/user/tg-monitor.service
-	systemctl --user daemon-reload
-	systemctl --user enable --now tg-monitor.service
+build:
+	@echo "Building tg-monitoring image"
+	docker-compose -f docker-compose.postgres.yml build

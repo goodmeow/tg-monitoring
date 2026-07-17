@@ -1,9 +1,11 @@
+AGENTS.md
 .env
 .env.*
 *.env
 *.env.*
 .envrc
 !.env.example
+!.env.docker.example
 
 secrets/
 .secrets/

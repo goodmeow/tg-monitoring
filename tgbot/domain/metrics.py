@@ -26,6 +26,7 @@ from prometheus_client.parser import text_string_to_metric_families
 
 @dataclass
 class FileSystem:
+    device: str
     mount: str
     fstype: str
     size_bytes: float
@@ -36,8 +37,12 @@ class FileSystem:
 @dataclass
 class NodeStats:
     cpu_load_per_core: float
+    cpu_load1: float | None
+    cpu_cores: int
+    hostname: str | None
     mem_available_pct: float
     disks: List[FileSystem]
+    boot_time: float | None
     timestamp: float
 
 
@@ -53,6 +58,8 @@ async def fetch_node_stats(url: str, timeout_sec: int) -> NodeStats:
     load1: Optional[float] = None
     mem_total: Optional[float] = None
     mem_available: Optional[float] = None
+    boot_time: Optional[float] = None
+    hostname: Optional[str] = None
 
     fs_map: Dict[Tuple[str, str], FileSystem] = {}
     inode_totals: Dict[str, float] = {}
@@ -93,10 +100,17 @@ async def fetch_node_stats(url: str, timeout_sec: int) -> NodeStats:
                 labels = s.labels or {}
                 mount = labels.get("mountpoint", "")
                 fstype = labels.get("fstype", "")
+                device = labels.get("device", "")
                 key = (mount, fstype)
                 fs = fs_map.get(key)
                 if fs is None:
-                    fs = FileSystem(mount=mount or "/", fstype=fstype or "", size_bytes=0.0, avail_bytes=0.0)
+                    fs = FileSystem(
+                        device=device or "",
+                        mount=mount or "/",
+                        fstype=fstype or "",
+                        size_bytes=0.0,
+                        avail_bytes=0.0,
+                    )
                     fs_map[key] = fs
                 try:
                     val = float(s.value)
@@ -110,6 +124,18 @@ async def fetch_node_stats(url: str, timeout_sec: int) -> NodeStats:
                     inode_totals[fs.mount] = val
                 elif name == "node_filesystem_files_free":
                     inode_free[fs.mount] = val
+        elif name == "node_boot_time_seconds":
+            for s in family.samples:
+                try:
+                    boot_time = float(s.value)
+                except Exception:
+                    pass
+        elif name == "node_uname_info":
+            for s in family.samples:
+                labels = s.labels or {}
+                nodename = labels.get("nodename")
+                if nodename:
+                    hostname = nodename
 
     # Compute inode free pct per mount where possible
     for m, tot in inode_totals.items():
@@ -124,11 +150,11 @@ async def fetch_node_stats(url: str, timeout_sec: int) -> NodeStats:
                     fs.inode_free_pct = None
                 break
 
+    cpu_cores = max(1, len(cores) or 1)
     cpu_load_per_core = 0.0
     if load1 is not None:
         try:
-            c = max(1, len(cores) or 1)
-            cpu_load_per_core = float(load1) / c
+            cpu_load_per_core = float(load1) / cpu_cores
         except Exception:
             cpu_load_per_core = float(load1)
 
@@ -139,7 +165,11 @@ async def fetch_node_stats(url: str, timeout_sec: int) -> NodeStats:
     ts = time.time()
     return NodeStats(
         cpu_load_per_core=cpu_load_per_core,
+        cpu_load1=load1,
+        cpu_cores=cpu_cores,
+        hostname=hostname,
         mem_available_pct=mem_available_pct,
         disks=list(fs_map.values()),
+        boot_time=boot_time,
         timestamp=ts,
     )

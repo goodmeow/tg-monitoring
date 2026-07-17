@@ -19,8 +19,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import contextlib
 import importlib
+import os
+import socket
 from dataclasses import dataclass
 from typing import Any, Dict, List, Coroutine
 
@@ -29,9 +31,12 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 
 from tgbot.domain.config import Config
 from tgbot.core.logging import setup_logging
+from tgbot.core.database import DatabaseManager
 from tgbot.version import get_version
 from tgbot.stores.state_store import StateStore
 from tgbot.stores.rss_store import RssStore
+from tgbot.stores.state_store_v2 import HybridStateStore
+from tgbot.stores.rss_store_v2 import HybridRssStore
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.clients.feed_client import FeedClient
 
@@ -44,6 +49,7 @@ class AppContext:
     stores: Dict[str, Any]
     clients: Dict[str, Any]
     version: str
+    db_manager: DatabaseManager
 
 
 class App:
@@ -54,6 +60,10 @@ class App:
         self.log.info("tg-monitoring version: %s", self.version)
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
+
+        # Initialize database manager
+        self.db_manager = DatabaseManager(cfg)
+
         self.ctx = AppContext(
             cfg=cfg,
             bot=self.bot,
@@ -61,11 +71,16 @@ class App:
             stores={},
             clients={},
             version=self.version,
+            db_manager=self.db_manager,
         )
 
-        # Default stores (reuse existing implementations)
-        self.ctx.stores["state"] = StateStore(cfg.state_file)
-        self.ctx.stores["rss"] = RssStore(cfg.rss_store_file)
+        # Use hybrid stores (PostgreSQL with JSON fallback)
+        self.ctx.stores["state"] = HybridStateStore(
+            self.db_manager, cfg.state_file, cfg.memory_cache_size
+        )
+        self.ctx.stores["rss"] = HybridRssStore(
+            self.db_manager, cfg.rss_store_file, cfg.memory_cache_size
+        )
 
         # Default clients
         self.ctx.clients["node_exporter"] = NodeExporterClient(
@@ -75,6 +90,7 @@ class App:
 
         self.modules = []  # type: List[Any]
         self._tasks: List[asyncio.Task] = []
+        self._startup_notice_task: asyncio.Task | None = None
 
     def _import_symbol(self, path: str):
         mod_name, _, sym = path.partition(":")
@@ -108,6 +124,14 @@ class App:
                 self.dp.include_router(r)
             for c in (m.tasks(self.ctx) or []):
                 self._tasks.append(asyncio.create_task(c))
+
+        # Add heartbeat logging task
+        async def heartbeat():
+            while True:
+                self.log.info("Bot heartbeat: running")
+                await asyncio.sleep(60)  # Log every minute
+        self._tasks.append(asyncio.create_task(heartbeat()))
+
         self.log.info("Modules started: %s", ", ".join(getattr(m, 'name', 'module') for m in self.modules))
 
         # Set bot commands (menu) for convenience
@@ -161,12 +185,71 @@ class App:
                     pass
         self.log.info("Modules stopped")
 
-    async def run(self):
-        await self._start_modules()
+    def _control_chat_target(self) -> Any | None:
+        return self.cfg.control_chat_id or self.cfg.chat_id
+
+    async def _send_control_message(self, text: str, target: Any | None = None) -> None:
+        if target is None:
+            target = self._control_chat_target()
+        if not target:
+            self.log.debug("No control chat configured; skipping control message: %s", text)
+            return
         try:
+            await self.bot.send_message(
+                target,
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            self.log.warning("Failed to send control message", exc_info=True)
+
+    async def _notify_startup(self) -> None:
+        if not self._control_chat_target():
+            return
+        await asyncio.sleep(1)
+        hostname = socket.gethostname()
+        text = (
+            f"<b>🟢 Bot is back online</b>\n"
+            f"Host: <code>{hostname}</code>\n"
+            f"Version: <code>{self.version}</code>"
+        )
+        await self._send_control_message(text)
+
+    async def _notify_shutdown(self) -> None:
+        target = self._control_chat_target()
+        if not target:
+            return
+        hostname = socket.gethostname()
+        text = (
+            f"<b>🔴 Bot going offline</b>\n"
+            f"Host: <code>{hostname}</code>\n"
+            "Shutdown in <i>about 1 second</i>."
+        )
+        await self._send_control_message(text, target=target)
+        await asyncio.sleep(1)
+
+    async def run(self):
+        # Initialize database first
+        await self.db_manager.initialize()
+
+        await self._start_modules()
+        self._startup_notice_task = asyncio.create_task(self._notify_startup())
+        try:
+            self.log.info("Starting bot polling")
             await self.dp.start_polling(
                 self.bot,
-                allowed_updates=["message", "callback_query"],
+                allowed_updates=["message", "callback_query", "inline_query"],
             )
+        except Exception as e:
+            self.log.error("Polling failed with exception: %s", e, exc_info=True)
+            raise
         finally:
+            if self._startup_notice_task:
+                with contextlib.suppress(Exception):
+                    await self._startup_notice_task
+                self._startup_notice_task = None
+            await self._notify_shutdown()
             await self._stop_modules()
+            # Close database connection
+            await self.db_manager.close()
