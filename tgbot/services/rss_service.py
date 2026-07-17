@@ -66,8 +66,25 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
     total = 0
     lines: List[str] = []
     ts_local = datetime.now(tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-    lines.append(f"<b>📰 RSS Digest — {hostname}</b>")
-    lines.append(f"<i>{ts_local}</i>")
+    feed_count = sum(1 for items in items_by_feed.values() if items)
+    item_count = sum(len(items) for items in items_by_feed.values())
+    lines.append(f"<b>📰 RSS Digest — {_html.escape(hostname)}</b>")
+    lines.append(
+        f"<i>{ts_local}</i> · {item_count} new item"
+        f"{'' if item_count == 1 else 's'} from {feed_count} feed"
+        f"{'' if feed_count == 1 else 's'}"
+    )
+
+    def _feed_label(url: str) -> str:
+        parsed = urlparse(url)
+        host = parsed.netloc or url
+        path = parsed.path.rstrip("/")
+        generic_paths = {"/feed", "/rss", "/atom.xml", "/feed.xml", "/rss.xml"}
+        if path and path not in generic_paths:
+            label = f"{host}{path}"
+        else:
+            label = host
+        return label[:80].rstrip("/") or url
 
     def _format_meta(author: str, ts_value: int | None) -> str:
         parts: List[str] = []
@@ -78,7 +95,7 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
                 parts.append(
                     datetime.fromtimestamp(ts_value, tz=timezone.utc)
                     .astimezone()
-                    .strftime("%H:%M %Z")
+                    .strftime("%d %b %H:%M %Z")
                 )
             except Exception:
                 pass
@@ -95,21 +112,26 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
     for url, items in items_by_feed.items():
         if not items:
             continue
-        items = sorted(items, key=lambda x: x.get("published_ts", 0))
+        items = sorted(items, key=lambda x: x.get("published_ts", 0), reverse=True)
         cap = min(len(items), cfg.rss_digest_items_per_feed)
 
         escaped_url = _html.escape(url)
+        escaped_label = _html.escape(_feed_label(url))
         lines.append("")
-        lines.append(f"<b>🌐 {escaped_url}</b> <i>({len(items)} new)</i>")
+        lines.append(f"<b>🌐 {escaped_label}</b> <i>({len(items)} new)</i>")
+        lines.append(f"<code>{escaped_url}</code>")
 
-        for it in items[:cap]:
-            title = _html.escape(it.get("title") or "(no title)")
+        for idx, it in enumerate(items[:cap], start=1):
+            title = _html.escape(" ".join(str(it.get("title") or "(no title)").split()))
             link = _html.escape(it.get("link") or "")
             author = _html.escape(it.get("author") or "")
             ts_value = it.get("published_ts")
             meta = _format_meta(author, ts_value)
 
-            header = f"• <a href=\"{link}\">{title}</a>"
+            if link:
+                header = f"{idx}. <a href=\"{link}\">{title}</a>"
+            else:
+                header = f"{idx}. <b>{title}</b>"
             if meta:
                 header += f" <i>({meta})</i>"
             lines.append(header)
@@ -118,7 +140,7 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
             if raw_desc:
                 snippet = _trim_snippet(raw_desc)
                 if snippet:
-                    lines.append(f"   ⤷ {snippet}")
+                    lines.append(f"   ⤷ {_html.escape(snippet)}")
 
             total += 1
             if total >= cfg.rss_digest_max_total:
@@ -129,6 +151,11 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
             lines.append(f"   ⤷ (+{more} more)")
 
         if total >= cfg.rss_digest_max_total:
+            omitted = max(0, item_count - total)
+            if omitted:
+                lines.append("")
+                suffix = "" if omitted == 1 else "s"
+                lines.append(f"<i>Digest limit reached; {omitted} item{suffix} omitted.</i>")
             break
 
     if total == 0:
