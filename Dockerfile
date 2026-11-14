@@ -11,7 +11,7 @@ RUN apk upgrade --no-cache
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN python -m pip install --no-cache-dir --only-binary :all: -r requirements.txt \
+RUN python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements.txt \
     && python -m pip uninstall -y pip setuptools wheel
 
 # Copy application code
