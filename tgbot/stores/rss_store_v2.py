@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 
 def _feed_meta_key(url: str) -> str:
     """Settings key for a feed URL; hashed so a long URL fits VARCHAR(255)."""
-    return "feed_meta:" + hashlib.sha1(url.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return "feed_meta:" + digest
 
 
 class PostgreSQLRssStore:
