@@ -25,8 +25,9 @@ RESPONSE_RE = re.compile(r"response_sent")
 HEARTBEAT_RE = re.compile(r"Bot heartbeat: running")
 TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3})")
 
-# State is written here and nowhere else, regardless of the configured path.
-STATE_DIR = Path(os.environ.get("WATCHDOG_STATE_DIR") or "/home/ubuntu/tg-monitoring/data")
+# Watchdog state lives at a fixed path; it is not configurable so file
+# writes never follow operator-provided input.
+STATE_PATH = Path("/home/ubuntu/tg-monitoring/data/log_watchdog_state.json")
 
 
 def _env_get(name: str) -> str | None:
@@ -62,7 +63,6 @@ def _host_display_name() -> str:
 class WatchdogConfig:
     """Configuration for watchdog execution."""
     log_path: Path
-    state_path: Path
     idle_min: int
     cooldown_min: int
     restart_cooldown_min: int
@@ -133,26 +133,20 @@ def _scan_lines(
     return last_response, last_request, last_heartbeat
 
 
-def _load_state(path: Path) -> dict:
+def _load_state() -> dict:
     """Load watchdog state from JSON file."""
-    if not path.exists():
+    if not STATE_PATH.exists():
         return {}
     try:
-        return json.loads(path.read_text())
+        return json.loads(STATE_PATH.read_text())
     except Exception:
         return {}
 
 
-def _resolve_state_path(raw: str | Path) -> Path:
-    """Accept only a file name; the directory is fixed by STATE_DIR."""
-    return (STATE_DIR / Path(raw).name).resolve()
-
-
-def _save_state(path: Path, state: dict) -> None:
+def _save_state(state: dict) -> None:
     """Persist watchdog state to JSON file."""
-    safe_path = _resolve_state_path(path)
-    safe_path.parent.mkdir(parents=True, exist_ok=True)
-    safe_path.write_text(json.dumps(state, indent=2))
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state, indent=2))
 
 
 def _send_telegram(token: str, chat_id: str, text: str) -> None:
@@ -168,7 +162,6 @@ def _send_telegram(token: str, chat_id: str, text: str) -> None:
 def _config_from_env(args: argparse.Namespace) -> WatchdogConfig:
     """Build watchdog config from CLI args and environment."""
     log_path = Path(_env_get("WATCHDOG_LOG_PATH") or args.log_path)
-    state_path = _resolve_state_path(_env_get("WATCHDOG_STATE_PATH") or args.state_path)
     idle_min = _env_int("WATCHDOG_IDLE_MIN", args.idle_min)
     cooldown_min = _env_int("WATCHDOG_COOLDOWN_MIN", args.cooldown_min)
     restart_cooldown_min = _env_int("WATCHDOG_RESTART_COOLDOWN_MIN", 30)
@@ -194,7 +187,6 @@ def _config_from_env(args: argparse.Namespace) -> WatchdogConfig:
 
     return WatchdogConfig(
         log_path=log_path,
-        state_path=state_path,
         idle_min=idle_min,
         cooldown_min=cooldown_min,
         restart_cooldown_min=restart_cooldown_min,
@@ -216,7 +208,6 @@ def main() -> int:
     """Run watchdog checks and alert/restart when idle."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--log-path", default="/home/ubuntu/tg-monitoring/logs/tg-monitoring.log")
-    parser.add_argument("--state-path", default="/home/ubuntu/tg-monitoring/data/log_watchdog_state.json")
     parser.add_argument("--idle-min", type=int, default=10)
     parser.add_argument("--cooldown-min", type=int, default=10)
     parser.add_argument("--max-bytes", type=int, default=2 * 1024 * 1024)
@@ -229,7 +220,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    state = _load_state(cfg.state_path)
+    state = _load_state()
     last_offset = int(state.get("last_offset", 0) or 0)
     last_response = state.get("last_response_ts")
     last_request = state.get("last_request_ts")
@@ -297,7 +288,7 @@ def main() -> int:
         state["last_request_ts"] = last_request
     if last_heartbeat:
         state["last_heartbeat_ts"] = last_heartbeat
-    _save_state(cfg.state_path, state)
+    _save_state(state)
     return 0
 
 
