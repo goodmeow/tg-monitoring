@@ -261,6 +261,27 @@ class PostgreSQLRssStore:
                 e,
             )
 
+    async def get_pending_counts(self, chat_id: int | str) -> Dict[str, int]:
+        """Count unsent items per feed for a chat."""
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            chat_id_int = int(chat_id)
+            async with self.db_manager.connection() as conn:
+                rows = await conn.fetch(
+                    """SELECT f.url, COUNT(*) AS cnt
+                       FROM rss_items i
+                       JOIN rss_feeds f ON i.feed_id = f.id
+                       WHERE f.chat_id = $1 AND f.is_active = true AND i.is_sent = false
+                       GROUP BY f.url""",
+                    chat_id_int
+                )
+                return {row["url"]: int(row["cnt"]) for row in rows}
+        except Exception as e:
+            logger.error(f"Failed to count unsent items for chat {chat_id}: {e}")
+            raise StorageError(f"Failed to count unsent items for chat {chat_id}", {"chat_id": chat_id}, e)
+
     async def get_chat_ids(self) -> List[int]:
         """Return all chat ids that currently have active RSS feeds."""
         if not self.db_manager.is_available:
@@ -366,9 +387,7 @@ class HybridRssStore:
     async def get_pending_counts(self, chat_id: int | str) -> Dict[str, int]:
         """Get pending item counts with fallback."""
         if self.db_manager.is_available:
-            # For PostgreSQL, return empty counts for now
-            # TODO: Implement proper pending counts in PostgreSQL store
-            return {}
+            return await self.pg_store.get_pending_counts(chat_id)
         else:
             return await self.json_store.get_pending_counts(chat_id)
 
