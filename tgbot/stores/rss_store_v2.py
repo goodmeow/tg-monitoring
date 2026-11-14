@@ -210,6 +210,57 @@ class PostgreSQLRssStore:
             logger.error(f"Failed to mark item {item_id} as sent: {e}")
             raise StorageError(f"Failed to mark item {item_id} as sent", {"item_id": item_id}, e)
 
+    async def get_unsent_grouped(
+        self, chat_id: int | str, limit: int = 100
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Return unsent items grouped by feed."""
+        items = await self.get_unsent_items(chat_id, limit)
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for item in items:
+            pub_date = item.get("pub_date")
+            ts = int(pub_date.timestamp()) if isinstance(pub_date, datetime) else 0
+            grouped.setdefault(item["feed_url"], []).append(
+                {
+                    "id": item.get("guid"),
+                    "title": item.get("title"),
+                    "link": item.get("link"),
+                    "author": "",
+                    "description": item.get("description"),
+                    "published_ts": ts,
+                }
+            )
+        return grouped
+
+    async def mark_guids_sent(
+        self, chat_id: int | str, delivered: Dict[str, List[str]]
+    ) -> None:
+        """Mark delivered items as sent by (feed url, guid)."""
+        if not delivered:
+            return
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            chat_id_int = int(chat_id)
+            async with self.db_manager.connection() as conn:
+                for url, guids in delivered.items():
+                    if not guids:
+                        continue
+                    await conn.execute(
+                        """UPDATE rss_items i SET is_sent = true
+                           FROM rss_feeds f
+                           WHERE i.feed_id = f.id AND f.chat_id = $1
+                             AND f.url = $2 AND i.guid = ANY($3::varchar[])""",
+                        chat_id_int, url, guids,
+                    )
+        except Exception as e:
+            logger.error(f"Failed to ack delivered items for chat {chat_id}: {e}")
+            raise StorageError(
+                f"Failed to ack delivered items for chat {chat_id}",
+                {"chat_id": chat_id},
+                e,
+            )
+
     async def get_chat_ids(self) -> List[int]:
         """Return all chat ids that currently have active RSS feeds."""
         if not self.db_manager.is_available:
@@ -415,31 +466,31 @@ class HybridRssStore:
         await self.json_store.add_seen_id(url, item_id)
 
     async def pop_pending_digest(self, chat_id: int | str) -> Dict[str, List[Dict[str, Any]]]:
-        """Collect and clear pending items for a chat."""
+        """Collect and clear pending items for a chat (legacy helper)."""
         if self.db_manager.is_available:
-            items = await self.pg_store.get_unsent_items(chat_id, 100)
-            result: Dict[str, List[Dict[str, Any]]] = {}
-            for item in items:
-                feed_url = item["feed_url"]
-                bucket = result.setdefault(feed_url, [])
-                pub_date = item.get("pub_date")
-                ts = 0
-                if isinstance(pub_date, datetime):
-                    ts = int(pub_date.timestamp())
-                bucket.append(
-                    {
-                        "id": item.get("guid"),
-                        "title": item.get("title"),
-                        "link": item.get("link"),
-                        "author": "",
-                        "description": item.get("description"),
-                        "published_ts": ts,
-                    }
-                )
-            for item in items:
-                await self.pg_store.mark_item_sent(item["id"])
-            return result
+            grouped = await self.pg_store.get_unsent_grouped(chat_id)
+            delivered = {
+                url: [it["id"] for it in items if it.get("id")]
+                for url, items in grouped.items()
+            }
+            await self.pg_store.mark_guids_sent(chat_id, delivered)
+            return grouped
         return await self.json_store.pop_pending_digest(chat_id)
+
+    async def get_pending_digest(self, chat_id: int | str) -> Dict[str, List[Dict[str, Any]]]:
+        """Read pending items without clearing them."""
+        if self.db_manager.is_available:
+            return await self.pg_store.get_unsent_grouped(chat_id)
+        return await self.json_store.get_pending_digest(chat_id)
+
+    async def remove_pending_items(
+        self, chat_id: int | str, delivered: Dict[str, List[str]]
+    ) -> None:
+        """Acknowledge items that were actually delivered."""
+        if self.db_manager.is_available:
+            await self.pg_store.mark_guids_sent(chat_id, delivered)
+        else:
+            await self.json_store.remove_pending_items(chat_id, delivered)
 
 
 class AsyncRssStore:
@@ -660,6 +711,43 @@ class AsyncRssStore:
             return digest
         except Exception as e:
             raise StorageError(f"Failed to pop pending digest for chat {chat_id}", {"chat_id": chat_id}, e)
+
+    async def get_pending_digest(self, chat_id: int | str) -> Dict[str, List[Dict[str, Any]]]:
+        """Read pending items without clearing them."""
+        cid = str(chat_id)
+        try:
+            digest = {}
+            prefix = f"{cid}:"
+            pending_keys = await self._pending_repo.list_keys(prefix)
+
+            for key in pending_keys:
+                url = key[len(prefix):]
+                items = await self._pending_repo.get(key, [])
+                if items:
+                    digest[url] = items
+
+            return digest
+        except Exception as e:
+            raise StorageError(f"Failed to get pending digest for chat {chat_id}", {"chat_id": chat_id}, e)
+
+    async def remove_pending_items(
+        self, chat_id: int | str, delivered: Dict[str, List[str]]
+    ) -> None:
+        """Remove only the items that were delivered to the chat."""
+        cid = str(chat_id)
+        try:
+            for url, ids in delivered.items():
+                if not ids:
+                    continue
+                key = f"{cid}:{url}"
+                items = await self._pending_repo.get(key, [])
+                keep = [it for it in items if it.get("id") not in set(ids)]
+                if keep:
+                    await self._pending_repo.set(key, keep)
+                else:
+                    await self._pending_repo.delete(key)
+        except Exception as e:
+            raise StorageError(f"Failed to ack pending digest for chat {chat_id}", {"chat_id": chat_id}, e)
 
     async def get_pending_counts(self, chat_id: int | str) -> Dict[str, int]:
         cid = str(chat_id)

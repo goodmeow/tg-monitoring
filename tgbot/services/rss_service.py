@@ -51,9 +51,12 @@ TELEGRAM_HTML_HARD_LIMIT = 4096
 TELEGRAM_HTML_CHUNK_LIMIT = 3600
 
 
-def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]], cfg: Config) -> str:
+def _compose_rss_digest_html(
+    hostname: str, items_by_feed: Dict[str, List[Dict]], cfg: Config
+) -> tuple[str, Dict[str, List[str]]]:
     total = 0
     lines: List[str] = []
+    delivered: Dict[str, List[str]] = {}
     ts_local = datetime.now(tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     feed_count = sum(1 for items in items_by_feed.values() if items)
     item_count = sum(len(items) for items in items_by_feed.values())
@@ -110,7 +113,10 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
         lines.append(f"<b>🌐 {escaped_label}</b> <i>({len(items)} new)</i>")
         lines.append(f"<code>{escaped_url}</code>")
 
+        included = 0
         for idx, it in enumerate(items[:cap], start=1):
+            if total >= cfg.rss_digest_max_total:
+                break
             title = _html.escape(" ".join(str(it.get("title") or "(no title)").split()))
             link = _html.escape(it.get("link") or "")
             author = _html.escape(it.get("author") or "")
@@ -132,24 +138,27 @@ def _compose_rss_digest_html(hostname: str, items_by_feed: Dict[str, List[Dict]]
                     lines.append(f"   ⤷ {_html.escape(snippet)}")
 
             total += 1
-            if total >= cfg.rss_digest_max_total:
-                break
+            included += 1
+            if it.get("id"):
+                delivered.setdefault(url, []).append(it["id"])
 
-        more = max(0, len(items) - cap)
+        more = max(0, len(items) - included)
         if more:
-            lines.append(f"   ⤷ (+{more} more)")
+            lines.append(f"   ⤷ (+{more} more in the next digest)")
 
         if total >= cfg.rss_digest_max_total:
             omitted = max(0, item_count - total)
             if omitted:
                 lines.append("")
                 suffix = "" if omitted == 1 else "s"
-                lines.append(f"<i>Digest limit reached; {omitted} item{suffix} omitted.</i>")
+                lines.append(
+                    f"<i>Digest limit reached; {omitted} item{suffix} deferred to the next digest.</i>"
+                )
             break
 
     if total == 0:
-        return "(no new items)"
-    return "\n".join(lines)
+        return "(no new items)", {}
+    return "\n".join(lines), delivered
 
 
 def _split_html_message(payload: str, *, limit: int = TELEGRAM_HTML_CHUNK_LIMIT) -> List[str]:
@@ -423,6 +432,58 @@ class RssService:
                 self.log.warning("rss poll iteration failed", exc_info=True)
             await asyncio.sleep(cfg.rss_poll_interval_sec)
 
+    async def send_digest(self, bot, cid, host, now: float) -> None:
+        """Send one chat's pending digest, then acknowledge only what was sent."""
+        pending = await self.rss.get_pending_digest(cid)
+        if not any(pending.values()):
+            await self.rss.set_last_digest(cid, now)
+            await self.rss.save()
+            return
+
+        msg, delivered = _compose_rss_digest_html(host, pending, self.cfg)
+        parts = _split_html_message(msg)
+        payloads: List[tuple[int, str]] = []
+        for idx, part in enumerate(parts, start=1):
+            part_label = f" (Part {idx}/{len(parts)})" if len(parts) > 1 else ""
+            payload = part + part_label
+            if len(payload) > TELEGRAM_HTML_HARD_LIMIT:
+                payload = payload[: TELEGRAM_HTML_HARD_LIMIT - 1] + "…"
+            payloads.append((idx, payload))
+
+        for idx, payload in payloads:
+            self.log.debug(
+                "Sending RSS digest chunk",
+                extra={
+                    "chat_id": cid,
+                    "chunk_index": idx,
+                    "chunk_total": len(payloads),
+                    "chunk_length": len(payload),
+                    "chunk_preview": payload[:120],
+                },
+            )
+            if len(payload) >= TELEGRAM_HTML_HARD_LIMIT:
+                self.log.warning(
+                    "Digest chunk trimmed to telegram ceiling",
+                    extra={
+                        "chat_id": cid,
+                        "chunk_index": idx,
+                        "chunk_total": len(payloads),
+                        "chunk_length": len(payload),
+                        "chunk_preview": payload[:120],
+                    },
+                )
+            await bot.send_message(
+                cid,
+                payload,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+
+        # Only now drop the items; a failed send leaves them pending for retry.
+        await self.rss.remove_pending_items(cid, delivered)
+        await self.rss.set_last_digest(cid, now)
+        await self.rss.save()
+
     async def digest_loop(self, bot):
         cfg = self.cfg
         rss = self.rss
@@ -443,53 +504,15 @@ class RssService:
                     last = await rss.get_last_digest(cid)
                     if now - last < cfg.rss_digest_interval_sec:
                         continue
-                    pending = await rss.pop_pending_digest(cid)
-                    if not any(pending.values()):
-                        await rss.set_last_digest(cid, now)
-                        await rss.save()
-                        continue
-                    msg = _compose_rss_digest_html(host, pending, cfg)
-                    parts = _split_html_message(msg)
-                    payloads: List[tuple[int, str]] = []
-                    for idx, part in enumerate(parts, start=1):
-                        part_label = f" (Part {idx}/{len(parts)})" if len(parts) > 1 else ""
-                        payload = part + part_label
-                        chunk_len = len(payload)
-                        if chunk_len > TELEGRAM_HTML_HARD_LIMIT:
-                            payload = payload[: TELEGRAM_HTML_HARD_LIMIT - 1] + "…"
-                        payloads.append((idx, payload))
-
-                    for idx, payload in payloads:
-                        chunk_len = len(payload)
-                        self.log.debug(
-                            "Sending RSS digest chunk",
-                            extra={
-                                "chat_id": cid,
-                                "chunk_index": idx,
-                                "chunk_total": len(payloads),
-                                "chunk_length": chunk_len,
-                                "chunk_preview": payload[:120],
-                            },
+                    try:
+                        await self.send_digest(bot, cid, host, now)
+                    except Exception:
+                        # Keep this chat's pending items for the next attempt.
+                        self.log.warning(
+                            "rss digest delivery failed",
+                            extra={"chat_id": cid},
+                            exc_info=True,
                         )
-                        if chunk_len >= TELEGRAM_HTML_HARD_LIMIT:
-                            self.log.warning(
-                                "Digest chunk trimmed to telegram ceiling",
-                                extra={
-                                    "chat_id": cid,
-                                    "chunk_index": idx,
-                                    "chunk_total": len(payloads),
-                                    "chunk_length": chunk_len,
-                                    "chunk_preview": payload[:120],
-                                },
-                            )
-                        await bot.send_message(
-                            cid,
-                            payload,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
-                        )
-                    await rss.set_last_digest(cid, now)
-                    await rss.save()
             except Exception:
                 self.log.warning("rss digest iteration failed", exc_info=True)
             await asyncio.sleep(cfg.rss_digest_interval_sec)
