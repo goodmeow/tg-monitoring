@@ -194,6 +194,16 @@ class Config:
         if errors:
             raise ValidationError("Configuration validation failed", {"errors": errors})
 
+    def is_chat_allowed(self, chat_id: int | str) -> bool:
+        if self.allow_any_chat:
+            return True
+        for allowed in self.allowed_chat_ids:
+            if isinstance(allowed, int) and chat_id == allowed:
+                return True
+            if isinstance(allowed, str) and str(chat_id) == allowed:
+                return True
+        return False
+
     @property
     def allowed_chat_ids(self) -> List[int | str]:
         ids: List[int | str] = []

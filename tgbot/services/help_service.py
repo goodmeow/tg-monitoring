@@ -44,17 +44,6 @@ from tgbot.stores.rss_store import RssStore
 from tgbot.services.monitoring_service import _compose_status_message_html
 
 
-def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
-    if cfg.allow_any_chat:
-        return True
-    for allowed in cfg.allowed_chat_ids:
-        if isinstance(allowed, int) and chat_id == allowed:
-            return True
-        if isinstance(allowed, str) and str(chat_id) == allowed:
-            return True
-    return False
-
-
 def _help_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -84,7 +73,7 @@ class HelpService:
 
         @router.message(Command("help"))
         async def cmd_help(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg):
+            if not self.cfg.is_chat_allowed(message.chat.id):
                 return
             lines = [
                 "<b>Bot Menu</b>",
@@ -105,7 +94,7 @@ class HelpService:
 
         @router.message(Command("version"))
         async def cmd_version(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg):
+            if not self.cfg.is_chat_allowed(message.chat.id):
                 return
             await message.answer(
                 f"tg-monitoring version: <code>{self.version}</code>",
@@ -115,7 +104,7 @@ class HelpService:
         @router.callback_query(F.data == "help:status")
         async def cb_status(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg):
+            if not self.cfg.is_chat_allowed(chat_id):
                 await query.answer()
                 return
             try:
@@ -146,7 +135,7 @@ class HelpService:
         @router.callback_query(F.data == "help:rss_ls")
         async def cb_rss_ls(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg):
+            if not self.cfg.is_chat_allowed(chat_id):
                 await query.answer()
                 return
             try:
@@ -177,7 +166,7 @@ class HelpService:
         @router.callback_query(F.data == "help:qrcode")
         async def cb_qrcode(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg):
+            if not self.cfg.is_chat_allowed(chat_id):
                 await query.answer()
                 return
             lines = [
@@ -193,7 +182,7 @@ class HelpService:
         @router.callback_query(F.data == "help:version")
         async def cb_version(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg):
+            if not self.cfg.is_chat_allowed(chat_id):
                 await query.answer()
                 return
             text = f"<b>Versi</b>\n\ntg-monitoring: <code>{self.version}</code>"
@@ -204,7 +193,7 @@ class HelpService:
         @router.callback_query(F.data == "help:exporter")
         async def cb_exporter(query: CallbackQuery):
             chat_id = query.message.chat.id if query.message else query.from_user.id
-            if not _is_allowed(chat_id, self.cfg):
+            if not self.cfg.is_chat_allowed(chat_id):
                 await query.answer()
                 return
             try:
@@ -241,7 +230,7 @@ class HelpService:
 
         @router.inline_query()
         async def iq_exporter(inline: InlineQuery):
-            if not _is_allowed(inline.from_user.id, self.cfg) and not self.cfg.allow_any_chat:
+            if not self.cfg.is_chat_allowed(inline.from_user.id):
                 await inline.answer([], cache_time=1)
                 return
             try:

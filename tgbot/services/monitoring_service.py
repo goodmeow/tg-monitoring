@@ -205,17 +205,6 @@ def _top_mem_processes(n: int = 3):
     return procs[:n]
 
 
-def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
-    if cfg.allow_any_chat:
-        return True
-    for allowed in cfg.allowed_chat_ids:
-        if isinstance(allowed, int) and chat_id == allowed:
-            return True
-        if isinstance(allowed, str) and str(chat_id) == allowed:
-            return True
-    return False
-
-
 @dataclass
 class MonitoringService:
     cfg: Config
@@ -228,7 +217,7 @@ class MonitoringService:
 
         @router.message(Command("status"))
         async def cmd_status(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg):
+            if not self.cfg.is_chat_allowed(message.chat.id):
                 return
             try:
                 stats = await self.client.fetch_stats()

@@ -36,17 +36,6 @@ except ImportError as exc:  # pragma: no cover
     raise RuntimeError("Pillow is required for QR code generation") from exc
 
 
-def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
-    if cfg.allow_any_chat:
-        return True
-    for allowed in cfg.allowed_chat_ids:
-        if isinstance(allowed, int) and chat_id == allowed:
-            return True
-        if isinstance(allowed, str) and str(chat_id) == allowed:
-            return True
-    return False
-
-
 def _normalize_text(message: Message) -> str | None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) >= 2:
@@ -89,7 +78,7 @@ class QrCodeService:
         @router.message(Command("qrcode"))
         async def cmd_qrcode(message: Message):
             chat_id = message.chat.id
-            if not _is_allowed(chat_id, self.cfg):
+            if not self.cfg.is_chat_allowed(chat_id):
                 return
 
             text = _normalize_text(message)

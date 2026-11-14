@@ -11,7 +11,7 @@ class Module(BaseModule):
     name = "stickers"
 
     def routers(self) -> List[Router]:
-        self.service = StickerKangService()
+        self.service = StickerKangService(self.ctx.cfg)
         return [self.service.build_router()]
 
     def tasks(self, ctx: Any) -> List[Coroutine[Any, Any, None]]:

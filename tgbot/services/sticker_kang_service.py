@@ -26,6 +26,8 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.types import InputSticker
 
+from tgbot.domain.config import Config
+
 
 def _pack_name(user_id: int, bot_username: str, suffix: str | None = None) -> str:
     base = f"u{user_id}_by_{bot_username}"
@@ -50,11 +52,15 @@ def _sticker_format_from_message(msg: Message) -> Optional[str]:
 
 @dataclass
 class StickerKangService:
+    cfg: Config
+
     def build_router(self) -> Router:
         router = Router()
 
         @router.message(Command("kang"))
         async def cmd_kang(message: Message):
+            if not self.cfg.is_chat_allowed(message.chat.id):
+                return
             if not message.reply_to_message or not (
                 message.reply_to_message.sticker or message.reply_to_message.photo
             ):

@@ -40,17 +40,6 @@ from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.rss_store_v2 import HybridRssStore
 
 
-def _is_allowed(chat_id: int | str, cfg: Config) -> bool:
-    if cfg.allow_any_chat:
-        return True
-    for allowed in cfg.allowed_chat_ids:
-        if isinstance(allowed, int) and chat_id == allowed:
-            return True
-        if isinstance(allowed, str) and str(chat_id) == allowed:
-            return True
-    return False
-
-
 def _valid_url_http_https(url: str) -> bool:
     try:
         p = urlparse(url)
@@ -242,7 +231,7 @@ class RssService:
 
         @router.message(Command("rss_add"))
         async def rss_add(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg):
+            if not self.cfg.is_chat_allowed(message.chat.id):
                 return
             text = message.text or ""
             parts = text.split(maxsplit=1)
@@ -300,7 +289,7 @@ class RssService:
 
         @router.message(Command("rss_rm"))
         async def rss_rm(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg):
+            if not self.cfg.is_chat_allowed(message.chat.id):
                 return
             parts = (message.text or "").split(maxsplit=1)
             if len(parts) < 2:
@@ -334,7 +323,7 @@ class RssService:
 
         @router.message(Command("rss_ls"))
         async def rss_ls(message: Message):
-            if not _is_allowed(message.chat.id, self.cfg):
+            if not self.cfg.is_chat_allowed(message.chat.id):
                 return
             feeds = await self.rss.get_feeds(message.chat.id)
             counts = await self.rss.get_pending_counts(message.chat.id)
