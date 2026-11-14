@@ -225,16 +225,11 @@ class App:
             self._exporter = None
 
     async def _stop_modules(self):
-        # Cancel background tasks
+        # Cancel background tasks and collect their cancellations.
         for t in self._tasks:
             t.cancel()
-        for t in self._tasks:
-            try:
-                await t
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
         # Shutdown hooks

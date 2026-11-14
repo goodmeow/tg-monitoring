@@ -101,7 +101,7 @@ class MemoryMonitor:
 
                 await asyncio.sleep(interval_seconds)
             except asyncio.CancelledError:
-                break
+                raise
             except Exception:
                 await asyncio.sleep(interval_seconds)
 

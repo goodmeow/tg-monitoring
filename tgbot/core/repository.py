@@ -83,17 +83,7 @@ class JsonRepository(Repository):
 
     async def _load_data(self) -> Dict[str, Any]:
         try:
-            if not os.path.exists(self.file_path):
-                return {}
-
-            if os.path.getsize(self.file_path) == 0:
-                return {}
-
-            with open(self.file_path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if not content:
-                    return {}
-                return json.loads(content)
+            return await asyncio.to_thread(self._load_data_sync)
         except FileNotFoundError:
             return {}
         except json.JSONDecodeError:
@@ -101,16 +91,35 @@ class JsonRepository(Repository):
         except Exception as e:
             raise RepositoryError(f"Failed to load {self.file_path}", {"error": str(e)})
 
+    def _load_data_sync(self) -> Dict[str, Any]:
+        if not os.path.exists(self.file_path):
+            return {}
+
+        if os.path.getsize(self.file_path) == 0:
+            return {}
+
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
+
     async def _save_data(self, data: Dict[str, Any]) -> None:
+        try:
+            await asyncio.to_thread(self._save_data_sync, data)
+        except Exception as e:
+            raise RepositoryError(f"Failed to save {self.file_path}", {"error": str(e)})
+
+    def _save_data_sync(self, data: Dict[str, Any]) -> None:
         tmp_path = self.file_path + ".tmp"
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, self.file_path)
-        except Exception as e:
+        except Exception:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
-            raise RepositoryError(f"Failed to save {self.file_path}", {"error": str(e)})
+            raise
 
     def _evict_cache(self):
         while len(self._cache) >= self.cache_size:
