@@ -6,9 +6,16 @@ ENV TG_MONITOR_VERSION=${TG_MONITOR_VERSION}
 
 WORKDIR /app
 
+# Apply Debian security updates available for the base image.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements.txt \
+    && python -m pip uninstall -y pip setuptools wheel
 
 # Copy application code
 COPY . .
