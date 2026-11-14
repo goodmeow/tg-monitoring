@@ -40,8 +40,11 @@ def _normalize_text(message: Message) -> str | None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) >= 2:
         return parts[1].strip()
-    if message.reply_to_message and (message.reply_to_message.text or message.reply_to_message.caption):
-        return (message.reply_to_message.text or message.reply_to_message.caption or "").strip()
+    reply = message.reply_to_message
+    if reply:
+        text = reply.text or reply.caption
+        if text:
+            return text.strip()
     return None
 
 
