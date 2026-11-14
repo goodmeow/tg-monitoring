@@ -393,6 +393,9 @@ class RssService:
                     await rss.update_feed_meta(url, etag, modified)
 
                     entries = list(getattr(parsed, "entries", []) or [])
+                    meta = await rss.get_feed_meta(url)
+                    seen = set(meta.get("seen_ids", []))
+                    subscribers = await rss.subscribers(url)
                     for e in entries:
                         iid = (
                             getattr(e, "id", None)
@@ -401,9 +404,6 @@ class RssService:
                         )
                         if not iid:
                             continue
-                        # seen dedupe
-                        meta = await rss.get_feed_meta(url)
-                        seen = meta.get("seen_ids", [])
                         if iid in seen:
                             continue
                         title = getattr(e, "title", None) or "(no title)"
@@ -423,10 +423,10 @@ class RssService:
                             "description": description,
                             "published_ts": ts,
                         }
-                        subscribers = await rss.subscribers(url)
                         for cid in subscribers:
                             await rss.add_pending_item(cid, url, item)
                         await rss.add_seen_id(url, iid)
+                        seen.add(iid)
                 await rss.save()
                 await rss.prune_sent_items()
             except Exception:
