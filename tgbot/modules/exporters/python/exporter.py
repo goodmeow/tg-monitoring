@@ -43,6 +43,15 @@ class PythonExporter(ExporterBase):
     def exporter_type(self) -> ExporterType:
         return ExporterType.PYTHON
         
+    def _spawn_process(self) -> subprocess.Popen:
+        """Spawn the standalone exporter process."""
+        return subprocess.Popen(
+            ["python3", str(self._script_path), str(self.port), self.host],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            preexec_fn=os.setsid
+        )
+
     async def start(self) -> bool:
         """Start the Python exporter as subprocess"""
         if self.is_running:
@@ -54,12 +63,7 @@ class PythonExporter(ExporterBase):
             self._create_standalone_script()
             
             # Start as subprocess
-            self._process = subprocess.Popen(
-                ["python3", str(self._script_path), str(self.port), self.host],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid
-            )
+            self._process = self._spawn_process()
             
             # Wait for startup
             await asyncio.sleep(2)
