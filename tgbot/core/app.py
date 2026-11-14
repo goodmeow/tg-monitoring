@@ -23,7 +23,7 @@ import contextlib
 import importlib
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Coroutine
+from typing import Any, Dict, List
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand, BotCommandScopeChat
@@ -34,8 +34,6 @@ from tgbot.core.logging import setup_logging
 from tgbot.core.middlewares import RequestLogMiddleware
 from tgbot.core.database import DatabaseManager
 from tgbot.version import get_version
-from tgbot.stores.state_store import StateStore
-from tgbot.stores.rss_store import RssStore
 from tgbot.stores.state_store_v2 import HybridStateStore
 from tgbot.stores.rss_store_v2 import HybridRssStore
 from tgbot.clients.node_exporter import NodeExporterClient

@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import List
 
 import logging
 from aiogram import Router, F
@@ -40,7 +38,7 @@ from tgbot.domain.config import Config
 from tgbot.modules.exporters import get_exporter_config
 from tgbot.domain.evaluator import Thresholds, evaluate
 from tgbot.clients.node_exporter import NodeExporterClient
-from tgbot.stores.rss_store import RssStore
+from tgbot.stores.rss_store_v2 import HybridRssStore
 from tgbot.services.monitoring_service import _compose_status_message_html
 
 
@@ -64,7 +62,7 @@ def _help_keyboard() -> InlineKeyboardMarkup:
 class HelpService:
     cfg: Config
     node: NodeExporterClient
-    rss: RssStore
+    rss: HybridRssStore
     version: str
     log: logging.Logger = logging.getLogger("tgbot.help")
 

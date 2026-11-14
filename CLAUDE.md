@@ -140,7 +140,6 @@ The exporters module provides flexible metrics collection:
 
 ### Entry Points
 - Primary: `python -m tgbot.main`
-- Legacy redirect: `python -m monitor.main` → `tgbot.main`
 - Singleton protection via pidfile (`data/tg-monitor.pid`)
 
 ## Development Guidelines
