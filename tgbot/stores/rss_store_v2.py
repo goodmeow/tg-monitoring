@@ -30,6 +30,8 @@ from tgbot.core.exceptions import StorageError
 
 logger = logging.getLogger(__name__)
 
+_DB_UNAVAILABLE = "Database not available"
+
 
 def _feed_meta_key(url: str) -> str:
     """Settings key for a feed URL; hashed so a long URL fits VARCHAR(255)."""
@@ -46,7 +48,7 @@ class PostgreSQLRssStore:
     async def add_feed(self, chat_id: int | str, url: str) -> None:
         """Add RSS feed for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -72,7 +74,7 @@ class PostgreSQLRssStore:
     async def remove_feed(self, chat_id: int | str, url: str) -> bool:
         """Remove RSS feed for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -89,7 +91,7 @@ class PostgreSQLRssStore:
     async def get_feeds(self, chat_id: int | str) -> List[str]:
         """Get all active feeds for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -106,7 +108,7 @@ class PostgreSQLRssStore:
     async def get_all_feeds(self) -> List[Dict[str, Any]]:
         """Get all active feeds across all chats."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -122,7 +124,7 @@ class PostgreSQLRssStore:
     async def update_feed_metadata(self, url: str, title: Optional[str] = None, description: Optional[str] = None) -> None:
         """Update feed metadata."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -142,7 +144,7 @@ class PostgreSQLRssStore:
     async def get_feed_meta(self, url: str) -> Dict[str, Any]:
         """Return cached ETag/Last-Modified for a feed URL."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -171,7 +173,7 @@ class PostgreSQLRssStore:
     ) -> None:
         """Store ETag/Last-Modified so the next poll can send conditional GETs."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -207,7 +209,7 @@ class PostgreSQLRssStore:
     ) -> bool:
         """Add RSS item if not already exists."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -242,7 +244,7 @@ class PostgreSQLRssStore:
     async def get_unsent_items(self, chat_id: int | str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get unsent items for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -264,7 +266,7 @@ class PostgreSQLRssStore:
     async def mark_item_sent(self, item_id: int) -> None:
         """Mark RSS item as sent."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -301,7 +303,7 @@ class PostgreSQLRssStore:
         if not delivered:
             return
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -327,7 +329,7 @@ class PostgreSQLRssStore:
     async def get_pending_counts(self, chat_id: int | str) -> Dict[str, int]:
         """Count unsent items per feed for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -348,7 +350,7 @@ class PostgreSQLRssStore:
     async def prune_sent_items(self, older_than_days: int = 7) -> int:
         """Delete delivered items older than a few days."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -366,7 +368,7 @@ class PostgreSQLRssStore:
     async def get_chat_ids(self) -> List[int]:
         """Return all chat ids that currently have active RSS feeds."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -381,7 +383,7 @@ class PostgreSQLRssStore:
     async def get_subscribers(self, url: str) -> List[int]:
         """Return chat ids subscribed to the provided feed URL."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -397,7 +399,7 @@ class PostgreSQLRssStore:
     async def get_last_digest_time(self, chat_id: int | str) -> float:
         """Get last digest timestamp for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)
@@ -417,7 +419,7 @@ class PostgreSQLRssStore:
     async def set_last_digest_time(self, chat_id: int | str, timestamp: float) -> None:
         """Set last digest timestamp for a chat."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             chat_id_int = int(chat_id)

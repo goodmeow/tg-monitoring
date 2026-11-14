@@ -28,6 +28,8 @@ from tgbot.core.exceptions import StorageError
 
 logger = logging.getLogger(__name__)
 
+_DB_UNAVAILABLE = "Database not available"
+
 
 class PostgreSQLStateStore:
     """PostgreSQL-backed state store for monitoring data."""
@@ -39,7 +41,7 @@ class PostgreSQLStateStore:
     async def get_check(self, key: str) -> Dict[str, Any]:
         """Get monitoring check state."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -57,7 +59,7 @@ class PostgreSQLStateStore:
     async def set_check(self, key: str, value: Dict[str, Any]) -> None:
         """Set monitoring check state."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -74,7 +76,7 @@ class PostgreSQLStateStore:
     async def iter_checks(self) -> AsyncIterator[tuple[str, Dict[str, Any]]]:
         """Iterate over all monitoring checks."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -94,7 +96,7 @@ class PostgreSQLStateStore:
     async def get_setting(self, key: str, default: Any = None) -> Any:
         """Get a general setting."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
@@ -109,7 +111,7 @@ class PostgreSQLStateStore:
     async def set_setting(self, key: str, value: Any) -> None:
         """Set a general setting."""
         if not self.db_manager.is_available:
-            raise StorageError("Database not available")
+            raise StorageError(_DB_UNAVAILABLE)
 
         try:
             async with self.db_manager.connection() as conn:
