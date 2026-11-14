@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-alpine
 
 # .git is excluded from the build context, so record the version here.
 ARG TG_MONITOR_VERSION=unknown
@@ -6,10 +6,8 @@ ENV TG_MONITOR_VERSION=${TG_MONITOR_VERSION}
 
 WORKDIR /app
 
-# Apply Debian security updates available for the base image.
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*
+# Apply Alpine security upgrades available for the base image.
+RUN apk upgrade --no-cache
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
