@@ -31,6 +31,8 @@ I am the RSS Management Agent responsible for managing RSS feed subscriptions, p
 - ✅ DO handle feeds on a per-chat basis (not globally).
 - ✅ RSS items should not be duplicated across chats.
 - ✅ Use async/await patterns for feed parsing and database operations.
+- ✅ Treat digest delivery as at-least-once: read pending, send, then acknowledge delivered ids.
+- ✅ Persist ETag/Last-Modified and send conditional GETs; HTTP 304 is a normal result.
 - ❌ DON'T store feeds globally when per-chat management is needed.
 - ✅ Implement proper error handling for feed parsing.
 - ✅ Respect feed update intervals to avoid excessive requests.
@@ -39,7 +41,8 @@ I am the RSS Management Agent responsible for managing RSS feed subscriptions, p
 - Module implementation: `tgbot/modules/rss/module.py`
 - RSS service: `tgbot/services/rss_service.py`
 - RSS stores: `tgbot/stores/rss_store_v2.py` and related files
-- Feed client: `tgbot/clients/feed_client.py` (if exists)
+- Feed client: `tgbot/clients/feed_client.py`
+- Digest formatting and delivery: `tgbot/services/rss_service.py`
 - Migration scripts: `scripts/migrate_rss_to_postgres.py`
 
 ## JIT Index Hints
@@ -58,9 +61,13 @@ I am the RSS Management Agent responsible for managing RSS feed subscriptions, p
 - Database migrations must be handled carefully to prevent data loss.
 - Feed parsing errors should be handled gracefully without stopping the bot.
 - Connection pooling is important for database performance.
+- Capped digest items are deferred to the next digest; never mark them sent.
+- `/rss_add` validates the URL is public before subscribing; keep the guard.
+- `poll_loop` fetches feed meta and subscribers once per feed; keep per-entry work store-free.
 
 ## Pre-PR Checks
 - Verify per-chat feed management works correctly
 - Test RSS add/remove operations
+- Confirm a failed digest send keeps pending items
 - Confirm database migration functionality
 - Check error handling for invalid feeds

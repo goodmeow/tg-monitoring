@@ -18,7 +18,7 @@ I am the Data Storage Agent responsible for managing data persistence using Post
 - Component responsible for data persistence functionality
 - Implements hybrid storage system with PostgreSQL primary and JSON fallback
 - Uses asyncpg for PostgreSQL operations
-- Maintains data consistency and integrity across backends
+- Keeps one store module per domain: `state_store_v2.py` (monitoring checks) and `rss_store_v2.py` (feeds, items, digests)
 
 ## Setup & Run
 - PostgreSQL connection via DATABASE_URL environment variable
@@ -36,8 +36,8 @@ I am the Data Storage Agent responsible for managing data persistence using Post
 - ✅ Maintain consistency between PostgreSQL and JSON storage.
 
 ## Touch Points / Key Files
-- State stores: `tgbot/stores/state_store.py`, `tgbot/stores/hybrid_state_store.py`
-- RSS stores: `tgbot/stores/rss_store_v2.py`, `tgbot/stores/hybrid_rss_store.py`
+- State stores: `tgbot/stores/state_store_v2.py` (`PostgreSQLStateStore`, `AsyncStateStore`, `HybridStateStore`)
+- RSS stores: `tgbot/stores/rss_store_v2.py` (`PostgreSQLRssStore`, `AsyncRssStore`, `HybridRssStore`)
 - Database manager: `tgbot/core/database.py`
 - Repository patterns: `tgbot/core/repository.py` and related files
 
@@ -58,9 +58,15 @@ I am the Data Storage Agent responsible for managing data persistence using Post
 - Connection pooling needs proper configuration to avoid resource exhaustion.
 - Schema migrations should be tested carefully to prevent data loss.
 - JSON storage must maintain the same interface as PostgreSQL.
+- `JsonRepository` buffers writes: call `HybridStateStore.save()` after state changes or nothing reaches `data/state.json`.
+- Digest delivery is peek-then-ack: `get_pending_digest()`, send, then `remove_pending_items()` only for delivered ids.
+- PostgreSQL stores feed ETag/Last-Modified in `settings` (key hashed with SHA-1) and prunes sent `rss_items` each poll cycle.
+- `/rss_ls` pending counts come from a grouped `rss_items` query on PostgreSQL; keep that path working.
 
 ## Pre-PR Checks
 - Verify PostgreSQL connection works properly
 - Test fallback to JSON storage when PostgreSQL unavailable
+- Confirm a failed digest send leaves items pending and a successful send acks only included items
+- Confirm state survives a save/reload cycle on the JSON backend
 - Confirm migration scripts work correctly
 - Check data consistency between storage backends

@@ -20,8 +20,9 @@ I am the External Clients Agent responsible for communicating with external serv
 
 ## Setup & Run
 - Node Exporter client fetches metrics from the configured endpoint.
-- Feed client retrieves and parses RSS feeds from remote URLs.
-- Both clients use httpx for async HTTP operations.
+- Feed client retrieves and parses RSS feeds over async httpx with a configured timeout and a 2 MB response cap.
+- `FeedClient.parse()` returns `(parsed, etag, last_modified)`; `parsed` is `None` on HTTP 304.
+- `ensure_public_url()` rejects loopback/private/link-local hosts before a feed is added.
 
 ## Patterns & Conventions
 - ✅ DO implement proper timeout handling for all HTTP requests.
@@ -52,6 +53,9 @@ I am the External Clients Agent responsible for communicating with external serv
 - Node Exporter client must parse Prometheus text format correctly—verify parsing logic.
 - RSS feed client handles different feed formats (RSS, Atom)—test with various feed types.
 - HTTP timeouts must be configured appropriately to avoid hanging requests.
+- Never parse feeds on the event loop: fetch with httpx, then hand the bytes to feedparser.
+- A 304 response is normal (conditional GET); do not treat `parsed=None` as an error.
+- Preserve the SSRF guard when adding any new URL-accepting command.
 - Network errors should be handled gracefully with fallback behaviors where appropriate.
 
 ## Pre-PR Checks

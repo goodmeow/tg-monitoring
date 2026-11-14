@@ -37,6 +37,7 @@ I am the Business Services Agent responsible for implementing the core business 
 - RSS feed management logic: `tgbot/services/rss_service.py`
 - Help command logic: `tgbot/services/help_service.py`
 - QR code generation logic: `tgbot/services/qrcode_service.py`
+- Sticker cloning logic: `tgbot/services/sticker_kang_service.py`
 
 ## JIT Index Hints
 - `grep -n "def build_router" tgbot/services/*.py` – find command registration methods.
@@ -52,6 +53,12 @@ I am the Business Services Agent responsible for implementing the core business 
 - Sticker Service Agent (handles sticker operations)
 
 ## Common Gotchas
+- Every command calls `cfg.is_chat_allowed(chat_id)`; do not copy per-service allowlist logic.
+- `RssService.send_digest()` sends first and acknowledges second, so a Telegram failure leaves items pending for retry.
+- Items skipped by the per-feed or total digest cap are deferred to the next digest, not dropped.
+- Change alerts render disk/inode values from `meta.by_mount`; the check's folded `value` is not a percentage.
+- Monitoring alerts go to `cfg.control_chat_id or cfg.chat_id`, matching `app.py`.
+- The "Next digest" line comes from `_next_digest_text()`; chats with no digest yet show "due now".
 - The monitoring service tracks consecutive alert states—verify state transitions work correctly.
 - RSS service handles per-chat feed management—ensure chat isolation works properly.
 - Message formatting for HTML parsing requires proper escaping of special characters.
@@ -60,4 +67,5 @@ I am the Business Services Agent responsible for implementing the core business 
 ## Pre-PR Checks
 - Test all implemented commands to ensure they work correctly
 - Verify message formatting renders properly in Telegram
+- Test digest failure path (items stay pending) and cap deferral
 - Check that background services handle errors gracefully

@@ -15,8 +15,9 @@ I am the Application Framework Agent responsible for coordinating the main tg-mo
 - Manage singleton protection and process coordination
 
 ## Project Context:
-- Main tg-monitoring application using aiogram 3.x, with modular architecture for monitoring, RSS, exporters and other features.
+- Main tg-monitoring application using aiogram 3.31 and aiohttp 3.14, with modular architecture for monitoring, RSS, exporters and other features.
 - Python 3.10+ application with PostgreSQL optional support and JSON fallback.
+- Runtime image is `python:3.11-alpine`; the version is baked in at build time via `TG_MONITOR_VERSION`.
 - Lives under the main package; consumed via `python -m tgbot.main` entry point.
 
 ## Setup & Run
@@ -25,6 +26,7 @@ I am the Application Framework Agent responsible for coordinating the main tg-mo
 - `python -m tgbot.main` – run the bot directly in foreground.
 - `make logs` – follow the bot container logs.
 - `make restart` / `make down` – restart or stop the Compose stack.
+- `python3 -m unittest discover -s tests` – run the regression tests.
 
 ## Patterns & Conventions
 - ✅ DO follow the modular architecture: modules in `tgbot/modules/`, business logic in `tgbot/services/`, persistence in `tgbot/stores/`.
@@ -62,8 +64,11 @@ I am the Application Framework Agent responsible for coordinating the main tg-mo
 - PostgreSQL connection pools are managed in `tgbot/core/database.py`—monitor for connection leaks.
 - Always check the lock file (`data/tg-monitor.pid`) before starting multiple instances.
 - Environment variables override .env file settings—verify your configuration chain.
+- The runtime image has no pip/setuptools/wheel; install nothing at runtime. Rebuild the image for dependency changes.
+- `/version` and the startup notice read `get_version()`, which prefers the `TG_MONITOR_VERSION` env var set by the Docker build.
 
 ## Pre-PR Checks
 - `python -m tgbot.main` starts and the bot responds as expected
 - Test basic commands like `/status`
+- Run `python3 -m unittest discover -s tests`
 - Ensure PostgreSQL fallback works if configured

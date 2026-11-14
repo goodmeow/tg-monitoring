@@ -38,8 +38,8 @@ I am the System Monitoring Agent responsible for collecting and analyzing system
 - Module implementation: `tgbot/modules/monitoring/module.py`
 - Monitoring service: `tgbot/services/monitoring_service.py`
 - Configuration: `tgbot/domain/config.py`
-- State stores: `tgbot/stores/` for persistence
-- Node Exporter client: `tgbot/clients/node_exporter_client.py` (if exists)
+- State stores: `tgbot/stores/state_store_v2.py` for persistence
+- Node Exporter client: `tgbot/clients/node_exporter.py`
 
 ## JIT Index Hints
 - `grep -n "cpu\|memory\|disk" tgbot/modules/monitoring/module.py` – find resource monitoring.
@@ -56,10 +56,13 @@ I am the System Monitoring Agent responsible for collecting and analyzing system
 ## Common Gotchas
 - The bot only sends alerts on state changes, not continuously.
 - Thresholds are configurable via environment variables.
-- State persistence helps track changes between checks.
+- State persistence helps track changes between checks; JSON checks are flushed by `HybridStateStore.save()`.
 - Must respect the ALERT_MIN_CONSECUTIVE setting for alert filtering.
+- Alerts go to `cfg.control_chat_id or cfg.chat_id`.
+- Disk/inode lines in ALERT/RECOVERED come from `meta.by_mount`; the folded check value is not a usage percentage.
 
 ## Pre-PR Checks
 - Verify alert thresholds work correctly
 - Test both ALERT and RECOVERED states
+- Confirm disk alerts show the real per-mount percentage
 - Confirm proper state tracking between metrics checks

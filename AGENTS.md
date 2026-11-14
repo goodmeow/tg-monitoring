@@ -15,11 +15,13 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 
 ## Project Context:
 - Simple single-app repo: Python Telegram bot for server monitoring with modular architecture under `tgbot/`, data stores, external clients, and configuration systems.
-- Python 3.10+ with aiogram 3.x framework, PostgreSQL optional with JSON fallback.
+- Python 3.10+ with aiogram 3.31 and aiohttp 3.14 (pinned in `requirements.txt`); PostgreSQL optional with JSON fallback.
+- Runtime image is `python:3.11-alpine`; deployed with Docker Compose via the `tg-monitor.service` systemd unit.
+- Regression tests use stdlib `unittest` under `tests/`.
 - Each major directory ships its own `AGENTS.md`; hierarchy follows 0-AGENTS.md (base), 1-*.md (sub-agents), 2-*.md (sub-sub-agents), etc.
 
 ## Root Setup Commands
-- `make build` – build the bot image with Docker Compose.
+- `make build` – build the bot image with Docker Compose, baking the `git describe` version.
 - `make up` – enable and start the systemd unit (Compose stack).
 - `make status` – show the systemd unit status.
 - `make logs` – follow the bot container logs.
@@ -27,6 +29,7 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 - `make down` – stop the Compose stack.
 - `make full-stop` – stop the stack and disable the watchdog.
 - `python -m tgbot.main` – run the bot directly in foreground.
+- `python3 -m unittest discover -s tests` – run the regression tests.
 
 ## Universal Conventions
 - Python + aiogram framework with async/await patterns, 4-space indent, imports ordered standard library → third-party → local.
@@ -38,6 +41,8 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 - Never commit API keys or tokens; reference `.env.example` and keep secrets in `.env` or environment variables.
 - Bot credentials surface via `bot_token` and `chat_id` environment variables; treat them as secrets.
 - Database credentials should be in environment variables when using PostgreSQL; never hardcode them.
+- `.dockerignore` keeps `.env*`, `data/`, `logs/`, `.git`, and caches out of the image; never remove those entries.
+- Scan a built image with `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image tg-monitoring-tg-monitoring:latest`.
 
 ## Subordinates (Hierarchy 1):
 - System Monitoring Agent (handles node_exporter metrics)
@@ -68,5 +73,7 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 ## Definition of Done
 - `make up` or `python -m tgbot.main` starts without errors; address any startup errors.
 - Basic commands like `/status` work correctly in testing.
+- `python3 -m unittest discover -s tests` passes.
+- Rebuild (`make build`) after Dockerfile or dependency changes; Trivy reports no fixable CVEs.
 - Update relevant `AGENTS.md` entries when adding patterns or commands.
 - Verify both PostgreSQL and JSON storage backends work if relevant.

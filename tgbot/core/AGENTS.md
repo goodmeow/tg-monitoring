@@ -36,6 +36,7 @@ I am the Core Framework Agent responsible for managing the foundational infrastr
 - Application framework: `tgbot/core/app.py`
 - Database connection management: `tgbot/core/database.py`
 - Logging configuration: `tgbot/core/logging.py`
+- Version resolution: `tgbot/version.py`
 - Process singleton: `tgbot/core/singleton.py`
 - Memory monitoring: `tgbot/core/memory.py`
 - Exception hierarchy: `tgbot/core/exceptions.py`
@@ -59,6 +60,9 @@ I am the Core Framework Agent responsible for managing the foundational infrastr
 - The singleton mechanism uses PID files—stale PID files can prevent app restarts.
 - Memory monitoring in `memory.py` adds overhead—configure thresholds appropriately.
 - Exception handling should preserve original error context for debugging.
+- `setup_logging()` rotates `logs/tgbot.log` at 10 MB with five backups; do not replace it with a plain FileHandler.
+- `get_version()` prefers `TG_MONITOR_VERSION`, which the Docker build sets from `git describe` (the image has no `.git` or git binary).
+- The runtime image has no pip/setuptools/wheel and no shell tooling beyond busybox—debug with `docker exec ... python3`.
 
 ## Pre-PR Checks
 - Verify the application starts and stops cleanly
