@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 
 
@@ -46,7 +47,11 @@ def setup_logging(level: Optional[str] = None) -> logging.Logger:
             pass  # Fallback to stream only if cannot create dir
 
     try:
-        handlers.append(logging.FileHandler(log_file))
+        handlers.append(
+            RotatingFileHandler(
+                log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+            )
+        )
         print(f"Logging to file: {log_file}")
     except Exception as e:
         print(f"Failed to setup file logging to {log_file}: {e}")
