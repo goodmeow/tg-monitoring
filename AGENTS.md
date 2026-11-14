@@ -45,6 +45,12 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 - Scan a built image with `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image tg-monitoring-tg-monitoring:latest`.
 - SonarCloud analysis runs in CI via `.github/workflows/sonar.yml` and needs the `SONAR_TOKEN` repository secret; project settings live in `sonar-project.properties`.
 
+### SonarCloud Notes
+- The free tier applies only while this repository stays public; private repos need a paid plan and consume GitHub Actions minutes.
+- CI prerequisites: add the `SONAR_TOKEN` repository secret, then turn off **Automatic Analysis** (project → Administration → Analysis Method). CI and local scans are rejected while it is on.
+- Local scanning uses `sonar-scanner` with the repository `sonar-project.properties`; pass the token through `SONAR_TOKEN`, never through the file or a commit.
+- Pull requests from forks do not receive repository secrets, so the scan workflow does not run for them.
+
 ## Subordinates (Hierarchy 1):
 - System Monitoring Agent (handles node_exporter metrics)
 - Notification Agent (handles Telegram alerts)
