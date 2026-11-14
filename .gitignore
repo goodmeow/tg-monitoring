@@ -95,3 +95,6 @@ pip-wheel-metadata/
 # Logs
 *.log
 logs/
+
+# SonarScanner working directory
+.scannerwork/
