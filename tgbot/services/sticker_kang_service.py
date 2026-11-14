@@ -89,7 +89,9 @@ class StickerKangService:
             title = f"{message.from_user.first_name}'s pack"
 
             fmt = _sticker_format_from_message(message.reply_to_message) or "static"
-            input_sticker = InputSticker(sticker=st.file_id, emoji_list=[emoji])
+            input_sticker = InputSticker(
+                sticker=st.file_id, format=fmt, emoji_list=[emoji]
+            )
 
             # Try add to existing set, else create new then add
             exists = False
@@ -101,69 +103,17 @@ class StickerKangService:
 
             try:
                 if not exists:
-                    # New unified API first
-                    try:
-                        await bot.create_new_sticker_set(
-                            user_id=user_id,
-                            name=name,
-                            title=title,
-                            stickers=[input_sticker],
-                            sticker_format=fmt,
-                        )
-                    except Exception:
-                        # Fallback older API (static/animated/video specific fields)
-                        if fmt == "animated":
-                            await bot.create_new_sticker_set(
-                                user_id=user_id,
-                                name=name,
-                                title=title,
-                                tgs_sticker=st.file_id,
-                                emojis=emoji,
-                            )
-                        elif fmt == "video":
-                            await bot.create_new_sticker_set(
-                                user_id=user_id,
-                                name=name,
-                                title=title,
-                                webm_sticker=st.file_id,
-                                emojis=emoji,
-                            )
-                        else:
-                            await bot.create_new_sticker_set(
-                                user_id=user_id,
-                                name=name,
-                                title=title,
-                                png_sticker=st.file_id,
-                                emojis=emoji,
-                            )
+                    await bot.create_new_sticker_set(
+                        user_id=user_id,
+                        name=name,
+                        title=title,
+                        stickers=[input_sticker],
+                        sticker_format=fmt,
+                    )
                 else:
-                    try:
-                        await bot.add_sticker_to_set(
-                            user_id=user_id, name=name, sticker=input_sticker
-                        )
-                    except Exception:
-                        # Fallback older API
-                        if fmt == "animated":
-                            await bot.add_sticker_to_set(
-                                user_id=user_id,
-                                name=name,
-                                tgs_sticker=st.file_id,
-                                emojis=emoji,
-                            )
-                        elif fmt == "video":
-                            await bot.add_sticker_to_set(
-                                user_id=user_id,
-                                name=name,
-                                webm_sticker=st.file_id,
-                                emojis=emoji,
-                            )
-                        else:
-                            await bot.add_sticker_to_set(
-                                user_id=user_id,
-                                name=name,
-                                png_sticker=st.file_id,
-                                emojis=emoji,
-                            )
+                    await bot.add_sticker_to_set(
+                        user_id=user_id, name=name, sticker=input_sticker
+                    )
             except Exception as e:
                 txt = str(e)
                 if "bot was blocked" in txt.lower() or "start" in txt.lower():
