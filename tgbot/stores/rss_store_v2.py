@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -28,6 +29,11 @@ from tgbot.core.repository import JsonRepository, NamespacedRepository
 from tgbot.core.exceptions import StorageError
 
 logger = logging.getLogger(__name__)
+
+
+def _feed_meta_key(url: str) -> str:
+    """Settings key for a feed URL; hashed so a long URL fits VARCHAR(255)."""
+    return "feed_meta:" + hashlib.sha1(url.encode("utf-8")).hexdigest()
 
 
 class PostgreSQLRssStore:
@@ -131,6 +137,62 @@ class PostgreSQLRssStore:
         except Exception as e:
             logger.error(f"Failed to update feed metadata for {url}: {e}")
             raise StorageError(f"Failed to update feed metadata for {url}", {"url": url}, e)
+
+    async def get_feed_meta(self, url: str) -> Dict[str, Any]:
+        """Return cached ETag/Last-Modified for a feed URL."""
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            async with self.db_manager.connection() as conn:
+                row = await conn.fetchrow(
+                    "SELECT value FROM settings WHERE key = $1", _feed_meta_key(url)
+                )
+            if not row:
+                return {"etag": None, "last_modified": None, "seen_ids": []}
+            data = row["value"]
+            if isinstance(data, str):
+                data = json.loads(data)
+            return {
+                "etag": data.get("etag"),
+                "last_modified": data.get("last_modified"),
+                "seen_ids": [],
+            }
+        except Exception as e:
+            logger.error(f"Failed to get feed meta for {url}: {e}")
+            raise StorageError(f"Failed to get feed meta for {url}", {"url": url}, e)
+
+    async def update_feed_meta(
+        self,
+        url: str,
+        etag: Optional[str] = None,
+        last_modified: Optional[str] = None,
+    ) -> None:
+        """Store ETag/Last-Modified so the next poll can send conditional GETs."""
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            async with self.db_manager.connection() as conn:
+                await conn.execute(
+                    "UPDATE rss_feeds SET last_polled_at = NOW(), updated_at = NOW() WHERE url = $1",
+                    url
+                )
+                if etag is None and last_modified is None:
+                    return
+                payload = json.dumps(
+                    {"url": url, "etag": etag, "last_modified": last_modified}
+                )
+                await conn.execute(
+                    """INSERT INTO settings (key, value)
+                       VALUES ($1, $2::jsonb)
+                       ON CONFLICT (key) DO UPDATE
+                       SET value = EXCLUDED.value, updated_at = NOW()""",
+                    _feed_meta_key(url), payload
+                )
+        except Exception as e:
+            logger.error(f"Failed to update feed meta for {url}: {e}")
+            raise StorageError(f"Failed to update feed meta for {url}", {"url": url}, e)
 
     async def add_item(
         self,
@@ -423,8 +485,7 @@ class HybridRssStore:
     async def get_feed_meta(self, url: str) -> Dict[str, Any]:
         """Fetch feed metadata such as etag/last-modified/seen ids."""
         if self.db_manager.is_available:
-            # Metadata is tracked via postgres tables; seen_ids handled by rss_items
-            return {"etag": None, "last_modified": None, "seen_ids": []}
+            return await self.pg_store.get_feed_meta(url)
         return await self.json_store.get_feed_meta(url)
 
     async def update_feed_meta(
@@ -435,7 +496,7 @@ class HybridRssStore:
     ) -> None:
         """Persist feed metadata updates."""
         if self.db_manager.is_available:
-            await self.pg_store.update_feed_metadata(url, None, None)
+            await self.pg_store.update_feed_meta(url, etag, last_modified)
         else:
             await self.json_store.update_feed_meta(url, etag, last_modified)
 
