@@ -291,8 +291,7 @@ class MonitoringService:
                         await state.set_check(key, cur_state)
 
                 # Save state after processing all checks
-                if hasattr(state, 'save'):
-                    state.save()
+                await state.save()
 
                 if changes:
                     target_chat = cfg.chat_id or cfg.control_chat_id

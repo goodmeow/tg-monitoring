@@ -154,6 +154,11 @@ class HybridStateStore:
             async for item in self.json_store.iter_checks():
                 yield item
 
+    async def save(self) -> None:
+        """Persist buffered JSON state; PostgreSQL writes are immediate."""
+        if not self.db_manager.is_available:
+            await self.json_store.flush()
+
 
 class AsyncStateStore:
     """JSON-based state store (legacy/fallback)."""
