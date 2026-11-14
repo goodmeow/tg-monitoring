@@ -91,7 +91,7 @@ class App:
         self.ctx.clients["node_exporter"] = NodeExporterClient(
             url=cfg.node_exporter_url, timeout_sec=cfg.http_timeout_sec
         )
-        self.ctx.clients["feed"] = FeedClient()
+        self.ctx.clients["feed"] = FeedClient(timeout_sec=cfg.http_timeout_sec)
 
         self.modules = []  # type: List[Any]
         self._tasks: List[asyncio.Task] = []

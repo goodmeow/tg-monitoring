@@ -35,7 +35,7 @@ from aiogram.types import Message
 
 from tgbot.domain.config import Config
 from tgbot.domain.hostname import fetch_host_display_name, resolve_host_display_name
-from tgbot.clients.feed_client import FeedClient
+from tgbot.clients.feed_client import FeedClient, ensure_public_url
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.rss_store_v2 import HybridRssStore
 
@@ -266,6 +266,11 @@ class RssService:
                     if len(url) > 2000 or not _valid_url_http_https(url):
                         invalid.append(url)
                         continue
+                    try:
+                        await ensure_public_url(url)
+                    except ValueError:
+                        invalid.append(url)
+                        continue
                     if url in existing_feeds or url in added:
                         skipped.append(url)
                         continue
@@ -363,7 +368,7 @@ class RssService:
                     parsed = None
                     while attempt <= 3 and parsed is None:
                         try:
-                            parsed = self.client.parse(
+                            parsed, etag, modified = await self.client.parse(
                                 url,
                                 etag=meta.get("etag"),
                                 last_modified=meta.get("last_modified"),
@@ -387,14 +392,6 @@ class RssService:
                             continue
                     if parsed is None:
                         continue
-                    try:
-                        etag = getattr(parsed, "etag", None)
-                    except Exception:
-                        etag = None
-                    try:
-                        modified = getattr(parsed, "modified", None)
-                    except Exception:
-                        modified = None
                     await rss.update_feed_meta(url, etag, modified)
 
                     entries = list(getattr(parsed, "entries", []) or [])
