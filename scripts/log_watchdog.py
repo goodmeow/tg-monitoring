@@ -25,6 +25,9 @@ RESPONSE_RE = re.compile(r"response_sent")
 HEARTBEAT_RE = re.compile(r"Bot heartbeat: running")
 TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3})")
 
+# State is written here and nowhere else, regardless of the configured path.
+STATE_DIR = Path(os.environ.get("WATCHDOG_STATE_DIR") or "/home/ubuntu/tg-monitoring/data")
+
 
 def _env_get(name: str) -> str | None:
     """Return environment variable value, checking lowercase fallback."""
@@ -140,10 +143,16 @@ def _load_state(path: Path) -> dict:
         return {}
 
 
+def _resolve_state_path(raw: str | Path) -> Path:
+    """Accept only a file name; the directory is fixed by STATE_DIR."""
+    return (STATE_DIR / Path(raw).name).resolve()
+
+
 def _save_state(path: Path, state: dict) -> None:
     """Persist watchdog state to JSON file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2))
+    safe_path = _resolve_state_path(path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+    safe_path.write_text(json.dumps(state, indent=2))
 
 
 def _send_telegram(token: str, chat_id: str, text: str) -> None:
@@ -159,7 +168,7 @@ def _send_telegram(token: str, chat_id: str, text: str) -> None:
 def _config_from_env(args: argparse.Namespace) -> WatchdogConfig:
     """Build watchdog config from CLI args and environment."""
     log_path = Path(_env_get("WATCHDOG_LOG_PATH") or args.log_path)
-    state_path = Path(_env_get("WATCHDOG_STATE_PATH") or args.state_path)
+    state_path = _resolve_state_path(_env_get("WATCHDOG_STATE_PATH") or args.state_path)
     idle_min = _env_int("WATCHDOG_IDLE_MIN", args.idle_min)
     cooldown_min = _env_int("WATCHDOG_COOLDOWN_MIN", args.cooldown_min)
     restart_cooldown_min = _env_int("WATCHDOG_RESTART_COOLDOWN_MIN", 30)

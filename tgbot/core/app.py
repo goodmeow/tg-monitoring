@@ -22,6 +22,7 @@ import asyncio
 import contextlib
 import importlib
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -58,7 +59,10 @@ class App:
         self.cfg = cfg
         self.log = setup_logging()
         self.version = get_version()
-        self.log.info("tg-monitoring version: %s", self.version)
+        # The version comes from git or the environment; keep control
+        # characters out of the log line.
+        safe_version = re.sub(r"[^A-Za-z0-9._+-]", "", self.version)[:80] or "unknown"
+        self.log.info("tg-monitoring version: %s", safe_version)
         self.bot = Bot(cfg.bot_token)
         self.dp = Dispatcher()
         self._wrap_bot_methods()

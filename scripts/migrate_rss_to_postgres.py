@@ -29,6 +29,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+def _resolve_json_path(raw: str) -> Path:
+    """Keep --json-path inside the repository checkout."""
+    path = Path(raw).expanduser().resolve()
+    if project_root.resolve() not in path.parents:
+        raise ValueError(f"--json-path must be inside {project_root}")
+    return path
+
+
+def _log_field(value: Any) -> str:
+    """Flatten values read from JSON before writing them to the log."""
+    return str(value).replace("\r", " ").replace("\n", " ")[:500]
+
+
 class RSSDataMigrator:
     """Handles migration of RSS data from JSON to PostgreSQL."""
 
@@ -75,10 +88,10 @@ class RSSDataMigrator:
             pending = chat_data.get("pending", {})
             last_digest = chat_data.get("last_digest_ts", 0)
 
-            logger.info(f"Chat {chat_id}:")
+            logger.info(f"Chat {_log_field(chat_id)}:")
             logger.info(f"  - {len(feeds)} feeds")
             logger.info(f"  - {sum(len(items) for items in pending.values())} pending items")
-            logger.info(f"  - Last digest: {last_digest}")
+            logger.info(f"  - Last digest: {_log_field(last_digest)}")
 
             total_feeds.update(feeds)
             total_pending_items += sum(len(items) for items in pending.values())
@@ -92,12 +105,12 @@ class RSSDataMigrator:
         if chats_data:
             sample_chat = list(chats_data.keys())[0]
             sample_data = chats_data[sample_chat]
-            logger.info(f"\nSample chat data ({sample_chat}):")
-            logger.info(f"  Feeds: {sample_data.get('feeds', [])[:2]}...")
+            logger.info(f"\nSample chat data ({_log_field(sample_chat)}):")
+            logger.info(f"  Feeds: {_log_field(sample_data.get('feeds', [])[:2])}...")
             if sample_data.get('pending'):
                 sample_url = list(sample_data['pending'].keys())[0]
                 sample_items = sample_data['pending'][sample_url][:1]
-                logger.info(f"  Sample pending item: {sample_items}")
+                logger.info(f"  Sample pending item: {_log_field(sample_items)}")
 
     async def _migrate_chats_and_feeds(self, chats_data: Dict) -> None:
         """Migrate chat feeds data."""
@@ -203,14 +216,19 @@ async def main():
     args = parser.parse_args()
 
     # Load JSON data
-    json_path = Path(args.json_path)
+    try:
+        json_path = _resolve_json_path(args.json_path)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return 1
     if not json_path.exists():
         logger.error(f"RSS JSON file not found: {json_path}")
         return 1
 
     logger.info(f"Loading RSS data from {json_path}")
-    with open(json_path, 'r') as f:
-        json_data = json.load(f)
+    json_data = json.loads(
+        await asyncio.to_thread(json_path.read_text, encoding="utf-8")
+    )
 
     # Initialize database connection
     try:
