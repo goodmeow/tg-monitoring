@@ -143,10 +143,29 @@ def _load_state() -> dict:
         return {}
 
 
+def _as_float(value: object) -> float | None:
+    """Return a numeric value, dropping anything malformed from the state file."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 def _save_state(state: dict) -> None:
-    """Persist watchdog state to JSON file."""
+    """Persist only the known numeric fields to the JSON state file."""
+    clean = {"last_offset": int(_as_float(state.get("last_offset")) or 0)}
+    for key in (
+        "last_response_ts",
+        "last_request_ts",
+        "last_heartbeat_ts",
+        "last_alert_ts",
+        "last_restart_ts",
+    ):
+        value = _as_float(state.get(key))
+        if value is not None:
+            clean[key] = value
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2))
+    STATE_PATH.write_text(json.dumps(clean, indent=2))
 
 
 def _send_telegram(token: str, chat_id: str, text: str) -> None:
