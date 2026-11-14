@@ -43,6 +43,7 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 - Database credentials should be in environment variables when using PostgreSQL; never hardcode them.
 - `.dockerignore` keeps `.env*`, `data/`, `logs/`, `.git`, and caches out of the image; never remove those entries.
 - Scan a built image with `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image tg-monitoring-tg-monitoring:latest`.
+- SonarCloud analysis runs in CI via `.github/workflows/sonar.yml` and needs the `SONAR_TOKEN` repository secret; project settings live in `sonar-project.properties`.
 
 ## Subordinates (Hierarchy 1):
 - System Monitoring Agent (handles node_exporter metrics)
