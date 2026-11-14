@@ -1,6 +1,9 @@
 services:
   tg-monitoring:
-    build: .
+    build:
+      context: .
+      args:
+        TG_MONITOR_VERSION: ${TG_MONITOR_VERSION:-unknown}
     container_name: tg-monitoring
     restart: unless-stopped
     depends_on:

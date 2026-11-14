@@ -29,4 +29,4 @@ full-stop:
 
 build:
 	@echo "Building tg-monitoring image"
-	docker compose -f docker-compose.yml build
+	TG_MONITOR_VERSION="$$(git describe --tags --always --dirty 2>/dev/null || echo unknown)" docker compose -f docker-compose.yml build
