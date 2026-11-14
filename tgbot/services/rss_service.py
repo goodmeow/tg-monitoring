@@ -428,6 +428,7 @@ class RssService:
                             await rss.add_pending_item(cid, url, item)
                         await rss.add_seen_id(url, iid)
                 await rss.save()
+                await rss.prune_sent_items()
             except Exception:
                 self.log.warning("rss poll iteration failed", exc_info=True)
             await asyncio.sleep(cfg.rss_poll_interval_sec)

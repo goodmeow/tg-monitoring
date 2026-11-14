@@ -344,6 +344,24 @@ class PostgreSQLRssStore:
             logger.error(f"Failed to count unsent items for chat {chat_id}: {e}")
             raise StorageError(f"Failed to count unsent items for chat {chat_id}", {"chat_id": chat_id}, e)
 
+    async def prune_sent_items(self, older_than_days: int = 7) -> int:
+        """Delete delivered items older than a few days."""
+        if not self.db_manager.is_available:
+            raise StorageError("Database not available")
+
+        try:
+            async with self.db_manager.connection() as conn:
+                result = await conn.execute(
+                    """DELETE FROM rss_items
+                       WHERE is_sent = true
+                         AND created_at < NOW() - ($1::int * INTERVAL '1 day')""",
+                    older_than_days
+                )
+                return int(result.split()[-1])
+        except Exception as e:
+            logger.error(f"Failed to prune sent RSS items: {e}")
+            raise StorageError("Failed to prune sent RSS items", cause=e)
+
     async def get_chat_ids(self) -> List[int]:
         """Return all chat ids that currently have active RSS feeds."""
         if not self.db_manager.is_available:
@@ -474,6 +492,12 @@ class HybridRssStore:
                 await self.json_store.flush()
         except Exception as e:
             logger.error(f"Error in save operation: {e}")
+
+    async def prune_sent_items(self, older_than_days: int = 7) -> int:
+        """Drop delivered rows; the JSON backend keeps no history."""
+        if self.db_manager.is_available:
+            return await self.pg_store.prune_sent_items(older_than_days)
+        return 0
 
     async def all_feeds(self) -> List[str]:
         """Return every active feed URL."""
