@@ -47,6 +47,18 @@ def _valid_url_http_https(url: str) -> bool:
     except Exception:
         return False
 
+
+def _next_digest_text(last: float, now: float, interval_sec: float) -> str:
+    """Human-readable countdown; a chat without a digest yet is due now."""
+    elapsed = now - last
+    if last <= 0 or elapsed < 0 or elapsed >= interval_sec:
+        return "Next digest: due now"
+    rem = int(interval_sec - elapsed)
+    if rem < 60:
+        return "Next digest in <1 min"
+    return f"Next digest in ~{rem // 60} min"
+
+
 TELEGRAM_HTML_HARD_LIMIT = 4096
 TELEGRAM_HTML_CHUNK_LIMIT = 3600
 
@@ -337,10 +349,7 @@ class RssService:
             feeds = await self.rss.get_feeds(message.chat.id)
             counts = await self.rss.get_pending_counts(message.chat.id)
             last = await self.rss.get_last_digest(message.chat.id)
-            next_ts = last + self.cfg.rss_digest_interval_sec
             now = _time.time()
-            rem = max(0, int(next_ts - now))
-            mins = rem // 60
             lines = ["<b>RSS Subscriptions</b>"]
             if feeds:
                 for u in feeds:
@@ -348,7 +357,7 @@ class RssService:
                     lines.append(f"• {_html.escape(u)} (pending: {c})")
             else:
                 lines.append("(none)")
-            lines.append(f"\nNext digest in ~{mins} min")
+            lines.append("\n" + _next_digest_text(last, now, self.cfg.rss_digest_interval_sec))
             await message.answer("\n".join(lines), parse_mode="HTML")
 
         return router

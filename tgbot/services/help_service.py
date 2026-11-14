@@ -39,6 +39,7 @@ from tgbot.modules.exporters import get_exporter_config
 from tgbot.domain.evaluator import Thresholds, evaluate
 from tgbot.clients.node_exporter import NodeExporterClient
 from tgbot.stores.rss_store_v2 import HybridRssStore
+from tgbot.services.rss_service import _next_digest_text
 from tgbot.services.monitoring_service import _compose_status_message_html
 
 
@@ -140,10 +141,7 @@ class HelpService:
                 feeds = await self.rss.get_feeds(chat_id)
                 counts = await self.rss.get_pending_counts(chat_id)
                 last = await self.rss.get_last_digest(chat_id)
-                next_ts = last + self.cfg.rss_digest_interval_sec
                 now = time.time()
-                rem = max(0, int(next_ts - now))
-                mins = rem // 60
                 lines = ["<b>RSS Subscriptions</b>"]
                 if feeds:
                     for u in feeds:
@@ -151,7 +149,9 @@ class HelpService:
                         lines.append(f"• {u} (pending: {c})")
                 else:
                     lines.append("(none)")
-                lines.append(f"\nNext digest in ~{mins} min")
+                lines.append(
+                    "\n" + _next_digest_text(last, now, self.cfg.rss_digest_interval_sec)
+                )
                 if query.message:
                     await query.message.answer("\n".join(lines), parse_mode="HTML")
                 await query.answer()
