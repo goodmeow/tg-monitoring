@@ -19,12 +19,14 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 - Each major directory ships its own `AGENTS.md`; hierarchy follows 0-AGENTS.md (base), 1-*.md (sub-agents), 2-*.md (sub-sub-agents), etc.
 
 ## Root Setup Commands
-- `make install` – install dependencies and setup virtual environment.
-- `make run` – start the bot in background mode with logging.
-- `make stop` – stop any running instances and clean up PID files.
-- `make restart` – restart the systemd service.
+- `make build` – build the bot image with Docker Compose.
+- `make up` – enable and start the systemd unit (Compose stack).
+- `make status` – show the systemd unit status.
+- `make logs` – follow the bot container logs.
+- `make restart` – restart the systemd unit.
+- `make down` – stop the Compose stack.
+- `make full-stop` – stop the stack and disable the watchdog.
 - `python -m tgbot.main` – run the bot directly in foreground.
-- `make logs` – view application logs.
 
 ## Universal Conventions
 - Python + aiogram framework with async/await patterns, 4-space indent, imports ordered standard library → third-party → local.
@@ -64,7 +66,7 @@ I am the Base Agent, the root of the hierarchical agent system for tg-monitoring
 - `grep -r "DATABASE_URL" tgbot` – locate database configuration usage.
 
 ## Definition of Done
-- `make run` succeeds locally; address any startup errors.
+- `make up` or `python -m tgbot.main` starts without errors; address any startup errors.
 - Basic commands like `/status` work correctly in testing.
 - Update relevant `AGENTS.md` entries when adding patterns or commands.
 - Verify both PostgreSQL and JSON storage backends work if relevant.

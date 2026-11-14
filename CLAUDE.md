@@ -13,8 +13,9 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Alternative: use Makefile
-make install
+# Alternative: use Docker Compose
+make build
+make up
 ```
 
 ### Running the Application
@@ -22,8 +23,8 @@ make install
 # Run the bot directly
 python -m tgbot.main
 
-# Alternative: use Makefile
-make run
+# Alternative: run the Compose stack
+make up
 ```
 
 ### Testing and Validation

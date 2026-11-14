@@ -20,11 +20,11 @@ I am the Application Framework Agent responsible for coordinating the main tg-mo
 - Lives under the main package; consumed via `python -m tgbot.main` entry point.
 
 ## Setup & Run
-- `make install` – install dependencies and setup virtual environment.
-- `make run` – start the bot in background mode with logging.
+- `make build` – build the bot image with Docker Compose.
+- `make up` – start the stack via the systemd unit.
 - `python -m tgbot.main` – run the bot directly in foreground.
-- `make stop` – stop any running instances and clean up PID files.
-- `make restart` – restart the systemd service.
+- `make logs` – follow the bot container logs.
+- `make restart` / `make down` – restart or stop the Compose stack.
 
 ## Patterns & Conventions
 - ✅ DO follow the modular architecture: modules in `tgbot/modules/`, business logic in `tgbot/services/`, persistence in `tgbot/stores/`.
@@ -64,6 +64,6 @@ I am the Application Framework Agent responsible for coordinating the main tg-mo
 - Environment variables override .env file settings—verify your configuration chain.
 
 ## Pre-PR Checks
-- `make run` and verify bot starts correctly
+- `python -m tgbot.main` starts and the bot responds as expected
 - Test basic commands like `/status`
 - Ensure PostgreSQL fallback works if configured

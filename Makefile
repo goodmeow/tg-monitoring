@@ -8,7 +8,7 @@ status:
 	sudo systemctl status tg-monitor.service
 
 logs:
-	journalctl -u tg-monitor.service -f
+	docker logs -f tg-monitoring
 
 restart:
 	sudo systemctl restart tg-monitor.service
