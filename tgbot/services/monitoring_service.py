@@ -75,6 +75,24 @@ def _decorate_with_bar(entry: Dict) -> str:
     return str(entry)
 
 
+def _describe_entry(entry: Dict) -> List[str]:
+    """Render one check result, expanding disk/inode entries per mount."""
+    if entry.get("type") in ("disk", "inode"):
+        mounts = _filter_disk_mounts((entry.get("meta") or {}).get("by_mount") or [])
+        if mounts:
+            return [
+                _decorate_with_bar(
+                    {
+                        "type": entry["type"],
+                        "value": it.get("value", 0.0),
+                        "mount": it.get("mount", "/"),
+                    }
+                )
+                for it in mounts
+            ]
+    return [_decorate_with_bar(entry)]
+
+
 def _compose_changes_message_html(changes: List[Tuple[str, Dict]], hostname: str) -> str:
     by: Dict[str, List[Dict]] = {"ALERT": [], "RECOVERED": []}
     for change, entry in changes:
@@ -85,11 +103,13 @@ def _compose_changes_message_html(changes: List[Tuple[str, Dict]], hostname: str
     if by.get("ALERT"):
         lines.append("\n🔴 <b>ALERT</b>")
         for e in by["ALERT"]:
-            lines.append(f"• {_decorate_with_bar(e)}")
+            for line in _describe_entry(e):
+                lines.append(f"• {line}")
     if by.get("RECOVERED"):
         lines.append("\n🟢 <b>RECOVERED</b>")
         for e in by["RECOVERED"]:
-            lines.append(f"• {_decorate_with_bar(e)}")
+            for line in _describe_entry(e):
+                lines.append(f"• {line}")
     return "\n".join(lines)
 
 
@@ -294,7 +314,7 @@ class MonitoringService:
                 await state.save()
 
                 if changes:
-                    target_chat = cfg.chat_id or cfg.control_chat_id
+                    target_chat = cfg.control_chat_id or cfg.chat_id
                     if not target_chat:
                         self.log.warning("No alert chat configured; skipping notification")
                     else:
